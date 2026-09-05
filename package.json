@@ -1,6 +1,6 @@
 {
   "name": "pi-solar-lite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Research, clarify intent, plan executable steps, and verify bounded work in pi with Solar Pro4 Max.",
   "type": "module",
   "license": "MIT",
@@ -15,10 +15,11 @@
   "engines": { "node": ">=22.19.0" },
   "files": [
     "runtime/extension.ts",
-    "runtime/interview.mjs",
-    "runtime/interview-report.mjs",
-    "runtime/interview-display.mjs",
-    "runtime/retry-fetch.mjs",
+    "runtime/interview.ts",
+    "runtime/interview-report.ts",
+    "runtime/interview-display.ts",
+    "runtime/retry-fetch.ts",
+    "runtime/workflow.ts",
     "skills/solar-research/SKILL.md",
     "skills/solar-interview/SKILL.md",
     "skills/solar-plan/SKILL.md",

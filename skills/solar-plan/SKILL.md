@@ -1,6 +1,6 @@
 ---
 name: solar-plan
-description: Produce a small implementation plan with design and risk self-review, without implementing it. Use in pi after the user finishes clarification, carrying unresolved and deferred items explicitly.
+description: Turn the research-grounded interview into bounded executable steps with design and risk self-review, then hand off to solar-execute within the requested local scope.
 ---
 
 # Solar Plan
@@ -17,14 +17,16 @@ For Windows directory discovery, use `Get-ChildItem -LiteralPath . -Force` in po
 2. Draft at most five executable steps. Each step names the affected files or output, an observable success condition, and a validation command when one exists. Split a larger task into bounded phases rather than inventing a long procedure.
 3. Review the draft from a design perspective: dependencies, interfaces, scope, and the simplest viable alternative.
 4. Review it from a critical perspective: likely failures, missing tests, unsafe assumptions, and unnecessary work. Revise the plan once to address the findings.
-5. Write the reviewed plan directly to `plan.md`, read it back, and report the path. Stop; do not edit product code or automatically start execution.
+5. Write the reviewed plan directly to `plan.md` and read it back. Check each step against the original intention and user corrections, not only the research interpretation. Do not expand scope, turn deferred choices into hidden requirements, or request another interview confirmation.
+6. If the plan is executable within the original requested local scope, set `Status: ready` and call `solar_plan_ready` with its path. The host launches `solar-execute`; no second approval is needed for that already-requested scope. If the user requested planning only (`--plan-only` or a plain-language restriction), or a material decision/permission blocks safe execution, record `Status: pending approval` or `Status: blocked`, explain the boundary, and stop without calling the handoff tool. Do not edit product code during planning.
 
 ```markdown
 # Plan
-Status: pending approval
+Status: ready
 Review: single-model self-review, not independent consensus
 ## Goal and scope
 ## Steps and validation
+1. Affected file/output — observable success condition — validation command or evidence.
 ## Design review
 ## Risk review and revisions
 ## Acceptance criteria

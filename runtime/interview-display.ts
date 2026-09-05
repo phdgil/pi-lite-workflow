@@ -1,5 +1,5 @@
-import { renderCurrentInterview, renderPendingInterview } from "./interview-report.mjs";
-import { renderInterview } from "./interview.mjs";
+import { renderCurrentInterview, renderPendingInterview } from "./interview-report.ts";
+import { renderInterview } from "./interview.ts";
 
 const ROUND_COLORS = ["accent", "syntaxKeyword", "syntaxString", "syntaxNumber"];
 

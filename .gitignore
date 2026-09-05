@@ -15,10 +15,11 @@
 !/runtime/
 /runtime/*
 !/runtime/extension.ts
-!/runtime/interview.mjs
-!/runtime/interview-report.mjs
-!/runtime/interview-display.mjs
-!/runtime/retry-fetch.mjs
+!/runtime/interview.ts
+!/runtime/interview-report.ts
+!/runtime/interview-display.ts
+!/runtime/retry-fetch.ts
+!/runtime/workflow.ts
 !/runtime/*.test.mjs
 !/skills/
 /skills/*
@@ -35,3 +36,4 @@
 /tests/*
 !/tests/package.test.mjs
 !/tests/pi-smoke.mjs
+!/tests/reload-fixture.mjs

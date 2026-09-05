@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { prepareReloadFixture } from "./reload-fixture.mjs";
 
 const TEST_PREFIX = "pi-solar-smoke-";
 const ANSI_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/u;
@@ -116,6 +117,7 @@ function proposalFor(payload) {
   const reviewing = textValues(payload.messages).some(text => text.includes("The user requested a review of the existing assessment"));
   assert.ok(contract.includes("PLANNING-READINESS RUBRIC"));
   assert.ok(contract.includes("CLOSURE HONESTY"));
+  assert.deepEqual(payload.tools.map(tool => tool.function.name).sort(), ["read", "solar_interview_round"], "Every interview request, including after reload/review, must expose only interview tools");
   const score = answers.length === 1 ? 0.6 : 0.75;
   const dimension = {
     score,
@@ -139,6 +141,7 @@ function proposalFor(payload) {
 async function startBackend() {
   const requests = [];
   const errors = [];
+  const scripted = [];
   let holdNextRequest = false;
   const server = http.createServer((request, response) => {
     const chunks = [];
@@ -151,23 +154,26 @@ async function startBackend() {
         const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         assert.equal(payload.model, "solar-pro4");
         assert.equal(payload.reasoning_effort, "max");
-        assert.ok(payload.tools?.some(tool => tool.function?.name === "solar_interview_round"), "Interview tool missing from model request");
         assert.ok(!ANSI_PATTERN.test(JSON.stringify(payload)), "ANSI escape reached the model request");
         requests.push(payload);
         if (holdNextRequest) {
           holdNextRequest = false;
           return;
         }
-        const toolArguments = proposalFor(payload);
+        const action = scripted.shift();
+        action?.check?.(payload);
+        const toolArguments = action?.arguments ?? (action?.text ? undefined : proposalFor(payload));
+        const toolName = action?.name ?? "solar_interview_round";
+        if (!action?.text) assert.ok(payload.tools?.some(tool => tool.function?.name === toolName), `Tool missing from model request: ${toolName}`);
         const toolCall = {
           index: 0,
           id: `smoke-round-${requests.length}`,
           type: "function",
-          function: { name: "solar_interview_round", arguments: JSON.stringify(toolArguments) },
+          function: { name: toolName, arguments: JSON.stringify(toolArguments) },
         };
         const events = [
-          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: { role: "assistant", tool_calls: [toolCall] }, finish_reason: null }] },
-          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 } },
+          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: action?.text ? { role: "assistant", content: action.text } : { role: "assistant", tool_calls: [toolCall] }, finish_reason: null }] },
+          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: {}, finish_reason: action?.text ? "stop" : "tool_calls" }], usage: { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 } },
         ];
         const body = `${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`;
         response.writeHead(200, { "Content-Type": "text/event-stream", "Content-Length": Buffer.byteLength(body) });
@@ -188,6 +194,7 @@ async function startBackend() {
     server,
     requests,
     errors,
+    script: actions => scripted.push(...actions),
     holdNext: () => { holdNextRequest = true; },
     port: server.address().port,
     close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
@@ -339,11 +346,13 @@ async function main() {
   try {
     backend = await startBackend();
     writeFixtures(agentDir, backend.port);
+    const verifyReload = prepareReloadFixture(agentDir);
     const install = await runCli(cliPath, ["install", packageSource], { cwd: workspace, env: environment });
     assert.ok(!/\berror\b/iu.test(install.stderr), `pi install reported an error: ${install.stderr}`);
     console.log(`[pi-smoke] installed ${packageSource}`);
 
     rpc = new RpcClient(cliPath, workspace, environment);
+    await verifyReload(rpc);
     const commands = (await rpc.request("get_commands")).data.commands;
     for (const skill of REQUIRED_SKILLS) {
       assert.ok(commands.some(command => command.name === `skill:${skill}` && command.source === "skill"), `Installed skill not discovered: ${skill}`);
@@ -395,14 +404,14 @@ async function main() {
     assert.equal(backend.requests.length, 4, "The interrupted review must have started");
     await rpc.close();
     rpc = new RpcClient(cliPath, workspace, environment, sessionFile);
-    await rpc.request("prompt", { message: "I have provided sufficient details. Move on to planning." });
+    await rpc.request("prompt", { message: "/solar-interview stop" });
     const closure = latestClosure(await rpc.entries());
     assert.equal(closure.status, "user_finished");
     assert.equal(closure.assessmentCurrent, false, "An interrupted review must be disclosed, not presented as a current assessment");
     assert.equal(closure.assessment.ambiguity, 25);
     assert.equal(closure.answers.length, 2);
     assert.equal(closure.assessment.proposal.deferred.length, 1);
-    assert.equal(backend.requests.length, 4, "A clear enough-details reply must end the interview without inference");
+    assert.equal(backend.requests.length, 4, "Stop must save without starting another stage");
     assert.ok(backend.requests.every(payload => payload.reasoning_effort === "max"), "Max reasoning effort was not preserved on the wire");
     assert.equal(backend.errors.length, 0, backend.errors.map(String).join("\n"));
 
@@ -416,7 +425,7 @@ async function main() {
     const pendingDeadline = Date.now() + 5_000;
     while (backend.requests.length < 5 && Date.now() < pendingDeadline) await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(backend.requests.length, 5);
-    await rpc.request("prompt", { message: "/solar-interview finish" });
+    await rpc.request("prompt", { message: "/solar-interview stop" });
     const unassessedClosure = latestClosure(await rpc.entries());
     assert.notEqual(unassessedClosure.anchorId, closure.anchorId);
     assert.equal(unassessedClosure.status, "user_finished");
@@ -424,7 +433,87 @@ async function main() {
     assert.equal(unassessedClosure.assessmentCurrent, false);
     assert.equal(unassessedClosure.answers.length, 1);
     assert.equal(backend.requests.length, 5, "Finishing an unassessed answer must cancel, not request more inference");
-    console.log("[pi-smoke] PASS install, discovery, optional question, informational score, review/restart, user finish at 25%, unassessed finish, max reasoning, and ANSI safety");
+    const originalTask = "Help learners choose an offline method. Research context, clarify my intention, then plan and create result.md with the chosen learning goal. Keep implementation local.";
+    const research = "# Research\nStatus: complete\n## Original intention\nHelp learners choose an offline method.\n## Evidence\nSupplied local fixture: learners can read Markdown; web search unavailable.\n## Caveats and unknowns\nThe learner outcome is a user decision, not a fact we can research.\n## Useful interview questions\nWhat observable learner behavior would demonstrate success?\n";
+    const plan = "# Plan\nStatus: ready\n## Goal and scope\nWrite result.md only, preserving other inputs.\n## Steps and validation\n1. Write result.md with the learning goal; read it back to verify the goal.\n## Design review\nOne local Markdown file is sufficient.\n## Risk review and revisions\nNo network or confidential inputs needed.\n## Acceptance criteria\nresult.md describes independent method selection.\n## Remaining uncertainties\nExact algorithms remain deferred to student discovery.\n";
+    backend.script([
+      { name: "write", arguments: { path: "research.md", content: research } },
+      { name: "solar_research_ready", arguments: { path: "research.md" } },
+      { check(payload) {
+        const text = JSON.stringify(payload.messages);
+        assert.ok(text.includes(originalTask), "Research handoff lost the original intention");
+        assert.ok(text.includes("learners can read Markdown"), "Interview did not receive research evidence");
+        assert.ok(text.includes("Do not tighten implementation details"), "Interview lost its scope guard");
+      } },
+    ]);
+    await rpc.prompt(`/skill:solar-research ${originalTask}`);
+    entries = await rpc.entries();
+    assert.equal(latestAssessment(entries).round, 1);
+    assert.equal(latestAssessment(entries).ambiguity, 40);
+    assert.equal(readFileSync(path.join(workspace, "research.md"), "utf8"), research);
+    await rpc.prompt("Independent method selection demonstrates success. Leave algorithms to student discovery.");
+    const beforeFinish = backend.requests.length;
+    backend.script([
+      { name: "write", arguments: { path: "plan.md", content: plan }, check(payload) {
+        const text = JSON.stringify(payload.messages);
+        assert.ok(text.includes("Independent method selection demonstrates success."), "Planning lost saved answers");
+        assert.ok(text.includes("learners can read Markdown"), "Planning lost research context");
+      } },
+      { name: "solar_plan_ready", arguments: { path: "plan.md" } },
+      { name: "write", arguments: { path: "result.md", content: "# Goal\nIndependent method selection.\n" } },
+      { name: "read", arguments: { path: "result.md" } },
+      { name: "write", arguments: { path: "progress.md", content: "# Progress\nStatus: complete\nVerified by reading result.md: independent method selection is present.\n" } },
+      { text: "Created result.md and verified the learning goal by reading it. Progress saved." },
+    ]);
+    await rpc.prompt("I have provided sufficient details. Move on to planning.");
+    entries = await rpc.entries();
+    const finished = latestClosure(entries);
+    assert.equal(finished.assessment.ambiguity, 25);
+    assert.equal(finished.answers.length, 2);
+    assert.equal(finished.next, "solar-plan");
+    assert.equal(backend.requests.length, beforeFinish + 6, "Finish should launch planning and execution, without another interview round or confirmation");
+    assert.equal(readFileSync(path.join(workspace, "plan.md"), "utf8"), plan);
+    assert.match(readFileSync(path.join(workspace, "progress.md"), "utf8"), /Status: complete/);
+    assert.match(readFileSync(path.join(workspace, "result.md"), "utf8"), /Independent method selection/);
+    const workflowEntries = entries.filter(entry => entry.customType === "solar-workflow-state-v1");
+    assert.deepEqual([...new Set(workflowEntries.slice(workflowEntries.findLastIndex(entry => entry.data.stage === "research")).map(entry => entry.data.stage))], ["research", "interview", "plan", "execute"]);
+    assert.ok(workflowEntries.at(-1).data.originalTask.includes(originalTask));
+    assert.equal(workflowEntries.at(-1).data.status, "idle", "A settled execution must not keep imposing its old goal");
+    backend.script([{ text: "A new unrelated question is not part of the old Solar task.", check(payload) {
+      assert.ok(!JSON.stringify(payload.messages.filter(message => ["system", "developer"].includes(message.role))).includes("SOLAR WORKFLOW HOST CONTRACT"));
+      assert.ok(!payload.tools.some(tool => /^solar_(?:research|plan)_ready$/.test(tool.function.name)));
+    } }]);
+    await rpc.prompt("Unrelated question: say hello without starting another workflow.");
+
+    let failedHandoff;
+    for (const command of ["/solar-interview finish plan-only", "/skill:solar-plan --plan-only Review the current requirements."]) {
+      await rpc.prompt("/skill:solar-interview Help create a local report.");
+      const beforePlanOnly = backend.requests.length;
+      backend.script([
+        { name: "write", arguments: { path: "plan.md", content: plan } },
+        { name: "solar_plan_ready", arguments: { path: "plan.md" } },
+      ]);
+      await rpc.prompt(command);
+      entries = await rpc.entries();
+      assert.equal(backend.requests.length, beforePlanOnly + 2, `${command}: a disabled handoff must not start execution`);
+      failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "solar_plan_ready");
+      assert.equal(failedHandoff.message.isError, true);
+      assert.match(failedHandoff.message.content[0].text, /Automatic continuation is disabled/);
+    }
+
+    const beforeResearchOnly = backend.requests.length;
+    backend.script([
+      { name: "write", arguments: { path: "research.md", content: research } },
+      { name: "solar_research_ready", arguments: { path: "research.md" } },
+    ]);
+    await rpc.prompt("/skill:solar-research Research an offline teaching context. --research-only");
+    entries = await rpc.entries();
+    assert.equal(backend.requests.length, beforeResearchOnly + 2, "Research-only must not start the interview");
+    failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "solar_research_ready");
+    assert.equal(failedHandoff.message.isError, true);
+    assert.equal(backend.errors.length, 0, backend.errors.map(String).join("\n"));
+    assert.ok(!rpc.events.some(event => event.type === "extension_error"), "Extension emitted a runtime error");
+    console.log("[pi-smoke] PASS install, optional questions, review/restart, user stop, research -> interview -> plan -> execute, original intent/context, no second confirmation, max reasoning, and ANSI safety");
     passed = true;
   } finally {
     if (rpc) await rpc.close();

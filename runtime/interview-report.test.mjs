@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatInterviewQuestion, prepareInterviewReport, renderCurrentInterview, renderPendingInterview } from "./interview-report.mjs";
+import { formatInterviewQuestion, prepareInterviewReport, renderCurrentInterview, renderPendingInterview } from "./interview-report.ts";
 
 test("the observed two-question report keeps one question and defers the other", () => {
   const original = "Have you opened the syllabus HWPX, and what databases does it list week by week? Which unfamiliar DB category comes first?";

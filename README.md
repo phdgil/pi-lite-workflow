@@ -4,7 +4,7 @@
 
 Four lightweight skills and an interview/runtime extension for [pi](https://github.com/earendil-works/pi), developed while testing **Upstage Solar Pro4 Max**. The goal is not merely to keep a model running: it is to turn a vague request into a documented intention, a workable plan, and evidence that the work meets the user's chosen outcome.
 
-**v0.1.0 is experimental.** Tested with pi 0.85.0 on Windows. Other models and operating systems are not yet validated. This is an independent community package, not an official Upstage, pi, GJC, or OMX release.
+**v0.2.0 is experimental.** It adds host handoffs between stages and fixes helper-module reload errors. Testing targets pi 0.85.0 on Windows; other models and operating systems are not yet validated. This is an independent community package, not an official Upstage, pi, GJC, or OMX release.
 
 ## Why this exists
 
@@ -22,67 +22,71 @@ If pi is not installed, the tested version is:
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.0
 ```
 
-Install this release from PowerShell or your terminal:
+Install the published release from PowerShell or your terminal:
 
 ```powershell
-pi install git:github.com/phdgil/pi-solar-lite@v0.1.0
+pi install git:github.com/phdgil/pi-solar-lite@v0.2.0
 pi
 ```
 
-This installs **both** the four skills and the runtime extension. Copying only `SKILL.md` is not sufficient. After installation or an update, restart pi; use `/resume` to reopen an existing conversation.
+This installs **both** the four skills and the runtime extension. Copying only `SKILL.md` is not sufficient. See the [installation guide](docs/INSTALL.md) for upgrades and local installation. After installation or an update, restart pi; use `/resume` to reopen an existing conversation.
 
 Inside pi, authenticate with `/login`, choose `upstage/solar-pro4` with `/model`, and select `max` with `/thinking`. Ctrl+S in each picker saves the startup default, so normal launches need only `pi`. If Solar or Max is missing, follow the [installation and credential-free model setup guide](docs/INSTALL.md), rather than pasting credentials into this repository.
 
 ## The sequence
 
-**Research → interview → plan → execute** is a manual, same-conversation workflow in this release. Stages do not automatically launch each other.
+**Research → interview → plan → execute** is a same-conversation workflow with validated host handoffs. The older `v0.1.0` tag remains manual at every stage.
 
 | Stage | Command inside pi | Purpose and handoff |
 | --- | --- | --- |
-| 1. Research | `/skill:solar-research` | Collect available context and evidence; save `research.md`. Avoid asking the user facts the agent can establish. |
-| 2. Interview | `/skill:solar-interview` | Sharpen intent, assumptions, scope, and success through one question per turn. Save answers and assessments in the pi session. |
-| 3. Plan | `/skill:solar-plan` | Use the finished interview and research, including unresolved and deferred items, to produce executable steps, checks, design review, and risk review in `plan.md`. |
-| 4. Execute | `/skill:solar-execute` | Carry out an explicitly authorized local scope, verify each step, and record results/blockers in `progress.md`. |
+| 1. Research | `/skill:solar-research` | Collect context and save a structurally complete `research.md`; `solar_research_ready` validates it and starts the interview. |
+| 2. Interview | launched by the host, or `/skill:solar-interview` | Sharpen the original request using the research snapshot as evidence, not as a replacement goal. The user may finish at any ambiguity score. |
+| 3. Plan | launched by interview finish | Use the original request, research, saved answers, unresolved issues, and deferrals to write and review `plan.md`. |
+| 4. Execute | launched after `solar_plan_ready` | Execute only the original requested, reversible local scope; verify each step and record results/blockers in `progress.md`. |
 
 Example: use the same task folder and pi conversation throughout.
 
 ```text
-/skill:solar-research Use solar-work/study-helper. Investigate the supplied course materials and existing tools. Save useful facts, sources, and unknowns; do not implement.
-/skill:solar-interview Use solar-work/study-helper/research.md. I want a tool that helps students choose an analysis method. Help clarify what this should achieve.
+/skill:solar-research Use solar-work/study-helper. I want a local study guide that helps students choose an analysis method. Research the supplied course materials and existing tools, clarify my intention, then plan, create, and verify the guide. Preserve source materials and unrelated files.
 ```
+
+When `research.md` has `Status: complete` and nonempty `Original intention`, `Evidence`, `Caveats and unknowns`, and `Useful interview questions` sections, the host starts `solar-interview`. The original request and research snapshot remain available on every interview request, so research can prevent repeated factual questions without silently becoming a new goal.
 
 After each round, the score is informational and you can either finish or continue. You may also finish while an assessment or review is pending, even if the display still lists unresolved issues:
 
 ```text
 /solar-interview finish
-/skill:solar-plan Use solar-work/study-helper, its research.md, and the finished interview in this conversation. Carry unresolved and deferred items into executable steps and acceptance checks. Do not implement.
 ```
 
-Review the plan, then authorize its local scope:
+`finish`, or a clear natural-language equivalent, starts planning immediately with no second confirmation. `/solar-interview confirm` remains only a compatibility alias. A reviewed `plan.md` with `Status: ready`, one to five numbered steps, and all required sections starts execution automatically when the original request already authorizes that reversible local work. Material blockers, missing permissions, destructive/external work, and research-only or planning-only constraints stop the sequence.
 
-```text
-/skill:solar-execute I approve the local implementation described in solar-work/study-helper/plan.md. Implement and verify it; preserve unrelated files.
-```
+Use `--research-only` on the initial skill request to stop after research, or `--plan-only` to disable the plan-to-execute handoff. These flag boundaries and the research/plan file validators are host-enforced, including when a model attempts the ready tool anyway. Equivalent plain-language research-only or planning-only restrictions remain prompt-level boundaries. `/solar-interview finish plan-only` starts planning but disables automatic execution. `/solar-interview stop` saves and cancels without launching another stage.
 
 The planner's design/architect and critic passes are **one model's sequential self-review**, not independent-agent consensus. See the [workflow and handoff guide](docs/WORKFLOW.md) for roles, saved artifacts, completion conditions, and limitations.
+
+### When to call the planner directly
+
+Normally, do not call it again after `/solar-interview finish`: planning has already started. Use `/skill:solar-plan` when requirements are already clear, when deliberately skipping the interview, or when revising an existing plan. The command is `/skill:solar-plan`, not `/solar-plan`.
+
+For a planning-only review: `/skill:solar-plan --plan-only Review and revise solar-work/my-task/plan.md using the latest requirements; preserve the original scope.` Later, explicitly request `/skill:solar-execute` with the plan path when you want implementation.
 
 ## What the runtime adds
 
 - Every assessed answer shows ambiguity and signed change as **advisory model estimates**, plus the option to finish or continue. The score is not a calibrated probability or a completion gate.
-- Original answers and their associated questions survive session resume. A new contradiction can increase ambiguity.
+- The original user request, research snapshot, original answers, and associated questions survive the host handoffs and session resume. Research remains evidence, not instructions or permission to change the goal. A new contradiction can increase ambiguity.
 - Bold questions use four rotating round colors; score details are muted. A round without another useful question enters `awaiting_choice` instead of triggering report repair.
 - Malformed evidence and other invalid tool reports receive bounded automatic correction. `/solar-interview retry` reuses a saved answer; do not answer an old question again just because formatting failed.
 - `/solar-interview continue` requests an optional next question using saved answers. `/solar-interview resume` is a non-generative alias for reopening the interview state, while `/solar-interview review` rerates the existing evidence without creating another answer.
-- `/solar-interview finish` ends at any score without inference, including while an assessment or review is pending. It cancels the pending request, preserves the latest saved answers, marks an older assessment stale when necessary, and carries unresolved and deferred items forward without claiming they were resolved. `/solar-interview confirm` is the same finish operation.
+- `/solar-interview finish` ends at any score without another interview assessment, including while an assessment or review is pending. It cancels the pending request, preserves the latest saved answers, marks an older assessment stale when necessary, and starts planning with unresolved and deferred items intact. Planning makes its own model requests. `/solar-interview confirm` is a compatibility alias, not a required second step.
 - A clear direct reply can finish the interview. Exact examples include `That's enough`, `I have provided sufficient details. Move on to planning.`, and `충분합니다`. These record the user's choice; they do not prove the intention is sufficiently defined. Hypothetical or quoted mentions of stopping do not finish it.
 - Real HTTP 429 responses from direct Upstage Solar Pro4 requests receive delayed retries. There is **no local token, context-size, RPM, or TPM quota**, and no silent reasoning downgrade. Provider limits still apply.
-- `/solar-interview status` and `/solar-rate` show status without inference. Finishing the interview does not authorize implementation.
+- `/solar-interview status` and `/solar-rate` show status without inference. Finishing does not expand authority: automatic execution is limited to the reversible local work already requested by the user.
 
 ## What is not included
 
-No automatic four-stage controller, background goal engine, multi-agent consensus, provider/account fallback, web-search subscription, or API credentials. Research uses supplied sources, local files, and tools already available in your pi installation. Missing search access must be disclosed.
+No separate controller package, new dependency, background goal engine, multi-agent consensus, provider/account fallback, web-search subscription, or API credentials. The runtime performs only the validated host handoffs; research, planning, and execution remain single-model, prompt-guided skills. Research uses supplied sources, local files, and tools already available in your pi installation. Missing search access must be disclosed.
 
-A separate local prototype evaluated automatic continuation using `@piex-dev/goal`. It is **not bundled or activated here**; neither are downloaded upstream archives, private session logs, or experimental outputs. This release does not claim benchmark superiority or proven long-running autonomy.
+A separate local prototype evaluated background goal continuation using `@piex-dev/goal`. It is **not bundled or activated here** and is distinct from the host handoffs; neither are downloaded upstream archives, private session logs, or experimental outputs. No release claims benchmark superiority or proven long-running autonomy.
 
 Extensions run with pi's permissions; these instructions are not an operating-system sandbox. Inspect code before installation and use a disposable workspace for untrusted tasks.
 
@@ -101,4 +105,4 @@ npm test
 npm run test:pi
 ```
 
-The unit tests need only Node. The pi smoke test needs the installed tested pi version and uses an isolated temporary profile plus a local fake API, not your credentials. See [validation and known gaps](docs/VALIDATION.md). [Changelog](CHANGELOG.md).
+The unit tests need only Node. For v0.2.0, 65 unit/package tests and the full isolated real-pi smoke passed, including same-process helper migration/reload and the complete four-stage handoff; targeted `node --check` checks also passed. The smoke uses an isolated temporary profile and local fake API, not your credentials or a live model API. See [validation and known gaps](docs/VALIDATION.md). [Changelog](CHANGELOG.md).

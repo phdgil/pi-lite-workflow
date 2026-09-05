@@ -1,4 +1,4 @@
-import { assessInterview, renderInterview } from "./interview.mjs";
+import { assessInterview, renderInterview } from "./interview.ts";
 
 export function prepareInterviewReport(proposal, previous, answers, anchorId, options) {
   const formatted = formatInterviewQuestion(proposal.question ?? "");

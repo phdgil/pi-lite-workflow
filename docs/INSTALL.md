@@ -16,20 +16,32 @@ If PowerShell blocks an npm/pi `.ps1` shim, use the sibling command `npm.cmd` or
 
 ## 2. Install the whole package
 
+### Release `v0.2.0`
+
 ```powershell
-pi install git:github.com/phdgil/pi-solar-lite@v0.1.0
+pi install git:github.com/phdgil/pi-solar-lite@v0.2.0
 pi list
 ```
 
-Pi registers the package in its user settings and loads the four skills plus `runtime/extension.ts`. It does not install an additional autonomous controller. Review any package before installing: pi extensions execute with your account's permissions. See the [official package documentation](https://github.com/earendil-works/pi/blob/v0.85.0/packages/coding-agent/docs/packages.md).
+Pi registers the package in its user settings and loads the four skills plus `runtime/extension.ts`, including automatic host handoffs. It does not install an additional autonomous controller. Review any package before installing: pi extensions execute with your account's permissions. See the [official package documentation](https://github.com/earendil-works/pi/blob/v0.85.0/packages/coding-agent/docs/packages.md).
 
 Alternative: download the release source ZIP from GitHub, extract it to a permanent folder, inspect it, then run:
 
 ```powershell
-pi install "C:\path\to\pi-solar-lite-0.1.0"
+pi install "C:\path\to\pi-solar-lite-0.2.0"
 ```
 
 Replace that path with the extracted folder containing `package.json`. Pi references a local package in place; do not move or delete it after installation. No separate build or `npm install` is needed for this package's host-provided dependencies. Git installation requires Git; local-folder installation does not require creating a Git repository.
+
+### Local checkout
+
+To test the current checkout, inspect it and install its repository root as a local package:
+
+```powershell
+pi install "C:\path\to\pi-solar-lite"
+```
+
+A local installation loads that checkout directly, including future development changes. Do not enable the local checkout and a Git installation together.
 
 Do not install both copies. Previous experimental users must disable the old standalone `solar-runtime.ts` loader and duplicate `solar-*` skill entries before enabling this package, using `pi config` or by moving those old entries outside pi's discovery directories. Do not delete session history. This migration is not needed for a fresh installation.
 
@@ -65,16 +77,16 @@ For an explicit one-off test, `pi --model upstage/solar-pro4:max` selects the te
 
 Restart pi after installation. `/solar-rate` should show `mode: retry-only` without calling an API. `/solar-interview status` should report no current assessment or your resumed assessment. Typing `/skill:solar-` should offer research, interview, plan, and execute. If missing, check `pi list` and `pi config` for disabled or duplicate resources.
 
-Use [research -> interview -> plan -> execute](WORKFLOW.md) in the same conversation and task folder. Before continuing existing work, use `/resume` to select its saved conversation rather than starting a fresh interview.
+Use [research -> interview -> plan -> execute](WORKFLOW.md) in the same conversation and task folder. A complete research report starts interviewing, user-directed interview finish starts planning, and a ready reviewed plan starts authorized reversible local execution. The original request and research snapshot survive each handoff. Before continuing existing work, use `/resume` to select its saved conversation rather than starting a fresh interview.
 
 ## Updates, interruptions, and removal
 
-- A version-pinned install stays at `v0.1.0`. Upgrade deliberately using `pi install git:github.com/phdgil/pi-solar-lite@<new-tag>` after reviewing the new release.
-- After a runtime update, restart pi and `/resume`. `/reload` can retain an already-loaded `.mjs` helper in pi 0.85.0; do not depend on it to reload every edited module.
+- Version-pinned installations do not automatically move to a newer tag. To upgrade an existing `v0.1.0` Git installation, remove that package registration with `pi remove git:github.com/phdgil/pi-solar-lite@v0.1.0`, then install `git:github.com/phdgil/pi-solar-lite@v0.2.0`. Do not delete authentication, model settings, or sessions. Restart pi and use `/resume`.
+- Runtime helpers use `.ts` imports to avoid the native-ESM `.mjs` cache mismatch observed with pi 0.85.0 and jiti. Isolated real-pi validation covers same-process `.mjs` -> `.ts` migration and `.ts` -> updated `.ts` reload, plus process restart. Restart pi and `/resume` remains the simplest recovery path after interruption.
 - While a question is being assessed, wait. Bounded automatic repair applies to malformed evidence and other invalid tool reports. If that correction stops, `/solar-interview retry` uses the already-saved answer and makes a model request; `status` is read-only and free of inference.
-- `/solar-interview finish` ends the interview at any score, including while an assessment or review is pending. It cancels the pending request, preserves saved answers, and labels an older assessment stale rather than treating it as current. `confirm` performs the same finish operation. `/solar-interview continue` requests an optional next question from saved answers; `/solar-interview resume` only reopens saved state without inference or a model request.
+- `/solar-interview finish` ends at any score and starts planning without a second confirmation. It also works while an assessment or review is pending: it cancels the pending request, preserves saved answers, and labels an older assessment stale rather than treating it as current. `confirm` is a compatibility alias only. `/solar-interview finish plan-only` starts planning without auto-execution; `/solar-interview stop` saves and cancels without launching another stage. `/solar-interview continue` requests an optional next question from saved answers; `/solar-interview resume` only reopens saved state without inference or a model request.
 - `/solar-interview review` rerates the existing saved evidence without creating a duplicate answer. It preserves the previous assessment and round number and does not automatically clear unresolved items. Restart and `/resume` first when loading this runtime update.
 - Real 429 responses may cause visible waits. The wrapper honors usable retry headers; otherwise waits start at 60 seconds, then 120/240/300/300. It allows up to five retries and 20 minutes of cumulative retry waiting per request. Esc or a caller timeout can stop sooner. It does not retry non-429 network errors, and it cannot eliminate provider-side limits.
-- Remove a Git installation with `pi remove git:github.com/phdgil/pi-solar-lite@v0.1.0`, then restart pi. For a local installation, pass its installed path to `pi remove`. Your saved conversation and project outputs are not removed by this package.
+- Remove a Git installation with `pi remove git:github.com/phdgil/pi-solar-lite@v0.2.0`, then restart pi. For a local installation, pass its installed path to `pi remove`. Your saved conversation and project outputs are not removed by this package.
 
-The first release is experimental; report failures with pi/package versions and redacted diagnostics, not keys or private transcripts.
+This release is experimental; report failures with pi/package versions and redacted diagnostics, not keys or private transcripts.

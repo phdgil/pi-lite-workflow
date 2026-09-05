@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRetryingFetch } from "./retry-fetch.mjs";
+import { createRetryingFetch } from "./retry-fetch.ts";
 
 const URL = "https://api.upstage.ai/v1/chat/completions";
 

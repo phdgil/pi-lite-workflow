@@ -35,7 +35,7 @@ export function recoverInterview(entries) {
           precedingQuestion = "";
         }
       }
-      if (anchor) answers.push({ id: entry.id, text: stripSkill(raw), question: precedingQuestion });
+      if (anchor && active) answers.push({ id: entry.id, text: stripSkill(raw), question: precedingQuestion });
     }
     if (entry.type === "message" && entry.message?.role === "assistant") {
       const text = messageText(entry.message);
@@ -117,7 +117,7 @@ export function renderInterview(state, korean = false) {
   const value = state.ambiguity.toFixed(1);
   const delta = state.delta === null ? (korean ? "이전 검증 점수 없음" : "no prior verified score") : `${state.delta >= 0 ? "+" : ""}${state.delta.toFixed(1)} ${korean ? "%p" : "percentage points"}`;
   const heading = korean ? `모호성 ${value}% · 이전 대비 ${delta} · 참고 정보 · 질문 ${state.round}` : `Ambiguity ${value}% | change ${delta} | informational only | round ${state.round}`;
-  const status = state.status === "confirmed" ? (korean ? "사용자가 인터뷰를 종료했습니다. 실행은 시작하지 않았습니다." : "Interview ended by the user. Execution has not started.") : state.status === "paused" ? (korean ? "일시 중지." : "Paused.") : (korean ? "충분하면 /solar-interview finish로 종료하고 계획으로 이동하세요. 점수와 관계없이 종료할 수 있습니다. 계속하려면 답변하거나 /solar-interview continue를 사용하세요." : "Enough detail? /solar-interview finish ends the interview so you can move to planning, at ANY score. To continue, answer or use /solar-interview continue.");
+  const status = state.status === "confirmed" ? (korean ? "이전 버전의 종료 기록입니다. /solar-interview finish로 계획을 시작할 수 있습니다. 재확인은 필요하지 않습니다." : "Legacy closure recorded. /solar-interview finish starts planning; no reconfirmation is needed.") : state.status === "paused" ? (korean ? "일시 중지." : "Paused.") : (korean ? "충분하면 /solar-interview finish로 바로 계획을 시작합니다. 점수와 관계없이 종료할 수 있고 재확인은 필요하지 않습니다. 계속하려면 답변하거나 /solar-interview continue를 사용하세요." : "Enough detail? /solar-interview finish starts planning directly, at ANY score, with no second confirmation. To continue, answer or use /solar-interview continue.");
   const floor = Number.isFinite(state.raw) && state.ambiguity > state.raw
     ? korean ? `계산 모호성 ${state.raw.toFixed(1)}% (위 수치는 이전 하한 규칙의 기록이며 종료를 막지 않습니다)` : `Raw ${state.raw.toFixed(1)}% (the stored score used a legacy floor; it does not prevent finishing)`
     : undefined;

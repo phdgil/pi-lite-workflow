@@ -1,19 +1,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { createRetryingFetch } from "./retry-fetch.mjs";
-import { prepareInterviewReport, renderCurrentInterview, renderPendingInterview } from "./interview-report.mjs";
-import { interviewDisplayNote, renderStyledInterview, renderStyledPendingInterview } from "./interview-display.mjs";
-import { finishInterview, INTERVIEW_CLOSURE_STATE, INTERVIEW_REVIEW_STATE, INTERVIEW_STATE, isInterviewFinishRequest, messageText, recoverInterview, renderInterviewClosure, stripSkill } from "./interview.mjs";
+import { createRetryingFetch } from "./retry-fetch.ts";
+import { prepareInterviewReport, renderCurrentInterview, renderPendingInterview } from "./interview-report.ts";
+import { interviewDisplayNote, renderStyledInterview, renderStyledPendingInterview } from "./interview-display.ts";
+import { finishInterview, INTERVIEW_CLOSURE_STATE, INTERVIEW_REVIEW_STATE, INTERVIEW_STATE, isInterviewFinishRequest, messageText, recoverInterview, renderInterviewClosure, stripSkill } from "./interview.ts";
+import { matchesWorkflowWorkspace, readWorkflowArtifact, recoverWorkflow, startWorkflow, WORKFLOW_STATE, workflowContract, workflowLimits } from "./workflow.ts";
 
 const RATE_STATE = "solar-retry-state-v2";
 const DELEGATES = Symbol.for("pi-solar-lite.upstage-delegates-v1");
-const INTENT_RUBRIC = "PLANNING-READINESS RUBRIC: Assess clarity of user intention, not completeness of an implementation design. 1.0 means the intended outcome, scope/constraints, or success meaning is explicit enough to plan; it does not require exact algorithms, database mappings, citation formats, confidential input lists, or experiment results. An explicit decision to let students discover a method or let the planner choose a detail is a resolved scope decision, not an unanswered question. Record such choices in deferred with exact saved-answer IDs. Do not penalize clarity solely for those deferred choices. Before every report, reclassify each inherited blocker against the original answers; never carry a resolved/deferred item forward merely because an older assessment listed it. Preserve genuinely contradictory intentions, unclear outcomes, and essential safety constraints as blockers. Do not invent permission to defer or lower scores to finish. When only implementation choices remain, summarize the confirmed direction for user confirmation instead of inventing a finer-detail interview question.";
+const INTENT_RUBRIC = "PLANNING-READINESS RUBRIC: Assess clarity of user intention, not completeness of an implementation design. 1.0 means the intended outcome, scope/constraints, or success meaning is explicit enough to plan; it does not require exact algorithms, database mappings, citation formats, confidential input lists, or experiment results. An explicit decision to let students discover a method or let the planner choose a detail is a resolved scope decision, not an unanswered question. Record such choices in deferred with exact saved-answer IDs. Do not penalize clarity solely for those deferred choices. Before every report, reclassify each inherited blocker against the original answers; never carry a resolved/deferred item forward merely because an older assessment listed it. Preserve genuinely contradictory intentions, unclear outcomes, and essential safety constraints as blockers. Do not invent permission to defer or lower scores to finish. When only implementation choices remain, omit the question and offer the move to planning. Never demand a second closure confirmation.";
 
 export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   let context: any;
   let interview: any;
   let closure: any;
+  let workflow: any;
   let active = false;
   let anchorId: string | undefined;
   let answers: any[] = [];
@@ -51,6 +53,8 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   function restore(ctx: any) {
     context = ctx;
     const entries = ctx.sessionManager.getBranch();
+    workflow = recoverWorkflow(entries);
+    if (workflow && !matchesWorkflowWorkspace(workflow, ctx.cwd)) workflow = { ...workflow, status: "workspace_mismatch" };
     const recovered = recoverInterview(entries);
     interview = recovered.state;
     closure = recovered.closure;
@@ -61,6 +65,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
     korean = /[가-힣]/.test(answers.map(answer => answer.text).join("\n"));
     const toolEntry = [...entries].reverse().find(entry => entry.type === "custom" && entry.customType === "solar-interview-tools-v1");
     originalTools = toolEntry?.data?.tools ?? originalTools;
+    restoreTools();
     settledReport = !reviewing && Boolean(answers.length && interview?.answerId === answers.at(-1)?.id);
     if (settledReport) pendingNote = undefined;
     if (!settledReport && ctx.isIdle()) pendingPhase = "stopped";
@@ -72,6 +77,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   }
 
   function progressText() {
+    if (closure && workflow && ["plan", "execute"].includes(workflow.stage)) return `Solar: ${workflow.stage}. Interview finished; no further interview answer or confirmation is needed.`;
     if (closure) return renderInterviewClosure(closure, korean);
     const pending = active && (reviewing || pendingNote || !interview || interview.answerId !== answers.at(-1)?.id);
     return pending ? renderPendingInterview(interview, korean, pendingNote, pendingPhase) : reportText(interview);
@@ -80,7 +86,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   function showInterview(note?: string, phase = pendingPhase) {
     if (!context) return;
     if (closure) {
-      context.ui.setWidget("solar-interview", renderInterviewClosure(closure, korean).split("\n"));
+      context.ui.setWidget("solar-interview", workflow && ["plan", "execute"].includes(workflow.stage) ? undefined : renderInterviewClosure(closure, korean).split("\n"));
       return;
     }
     if (!active && !interview) {
@@ -106,9 +112,44 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
     showInterview();
   }
 
-  async function finishSavedInterview(ctx: any, request: string) {
+  function saveWorkflow(next: any) {
+    workflow = next;
+    pi.appendEntry(WORKFLOW_STATE, next);
+    context?.ui.setStatus("solar-workflow", `Solar: ${next.stage} · ${next.status}`);
+  }
+
+  function restoreTools() {
+    const stageTools = ["solar_interview_round", "solar_research_ready", "solar_plan_ready"];
+    const base = (originalTools ?? pi.getActiveTools()).filter(name => !stageTools.includes(name));
+    if (active) {
+      originalTools ??= base;
+      pi.setActiveTools(["read", "solar_interview_round"]);
+    } else {
+      const handoff = workflow?.status === "active" && ["research", "plan"].includes(workflow.stage) ? [`solar_${workflow.stage}_ready`] : [];
+      pi.setActiveTools([...base, ...handoff]);
+    }
+  }
+
+  function launchStage(stage: string, instruction: string) {
+    active = stage === "interview";
+    if (active) {
+      originalTools ??= pi.getActiveTools().filter(name => name !== "solar_interview_round");
+      pi.appendEntry("solar-interview-tools-v1", { tools: originalTools });
+      pi.setActiveTools(["read", "solar_interview_round"]);
+      settledReport = false;
+      currentAnswerId = undefined;
+      closure = undefined;
+    } else {
+      restoreTools();
+    }
+    pi.sendUserMessage(`/skill:solar-${stage} ${instruction}`, { deliverAs: "followUp", expandPromptTemplates: true });
+  }
+
+  async function finishSavedInterview(ctx: any, request: string, advance = true, planOnly = false) {
     if (closure) return;
+    if (advance && workflow && !matchesWorkflowWorkspace(workflow, ctx.cwd)) throw new Error("Resume this workflow in its original workspace before starting planning.");
     closure = finishInterview(interview, answers, anchorId, request, reviewing);
+    closure.next = advance ? "solar-plan" : null;
     active = false;
     reviewing = false;
     settledReport = true;
@@ -116,16 +157,28 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
     pi.appendEntry(INTERVIEW_CLOSURE_STATE, closure);
     if (!ctx.isIdle()) ctx.abort();
     if (ctx.waitForIdle) await ctx.waitForIdle();
-    if (originalTools) pi.setActiveTools(originalTools);
+    restoreTools();
     showInterview();
-    pi.sendMessage({ customType: "solar-interview-handoff", content: `User-ended interview: the user may choose planning with the current context. This is NOT proof that every detail is resolved. Treat ambiguity as informational. Review all saved answers, unresolved/deferred issues, and any stale assessment before writing an executable plan. Implementation is not authorized by ending the interview.\n${JSON.stringify(closure)}`, display: true });
+    pi.sendMessage({ customType: "solar-interview-handoff", content: `User-ended interview. No further closure confirmation is needed. This is NOT proof that every detail is resolved. Treat ambiguity as informational. Review all saved answers, unresolved/deferred issues, and any stale assessment before writing an executable plan. Respect the original scope and any planning-only constraint.\n${JSON.stringify(closure)}`, display: false });
+    if (advance) {
+      const current = workflow ?? startWorkflow("interview", answers[0].text, ctx.cwd);
+      saveWorkflow({ ...current, stage: "plan", pendingHandoff: true, autoExecute: !planOnly && current.autoExecute });
+      showInterview();
+      launchStage("plan", "Use the original intention, research context, and complete saved interview handoff in this conversation. Preserve unresolved and deferred issues. Build and review executable steps; do not ask for another interview confirmation. Respect the host's planning-only setting and all user constraints.");
+    } else if (workflow) {
+      saveWorkflow({ ...workflow, status: "stopped" });
+      restoreTools();
+    }
   }
 
   pi.on("input", async (event, ctx) => {
-    if (event.source === "extension" || !isInterviewFinishRequest(event.text)) return;
+    if (event.source === "extension") return;
+    const planningRequest = /^\/skill:solar-plan(?:\s|$)/.test(event.text);
+    if (!planningRequest && !isInterviewFinishRequest(event.text)) return;
     restore(ctx);
+    context?.ui.setStatus("solar-workflow", workflow ? `Solar: ${workflow.stage} · ${workflow.status}` : undefined);
     if (!active || !answers.length) return;
-    await finishSavedInterview(ctx, event.text);
+    await finishSavedInterview(ctx, event.text, true, !workflowLimits(event.text).autoExecute);
     return { action: "handled" };
   });
 
@@ -164,6 +217,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
     closed = true;
     context?.ui.setWidget("solar-interview", undefined);
     context?.ui.setStatus("solar-rate", undefined);
+    context?.ui.setStatus("solar-workflow", undefined);
   });
 
   pi.registerCommand("solar-rate", {
@@ -174,26 +228,31 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   });
 
   pi.registerCommand("solar-interview", {
-    description: "Interview: finish at any score, continue voluntarily, status, pause, resume, retry, or review; confirm aliases finish",
+    description: "Finish -> plan -> execute; finish plan-only stops at planning; stop saves without continuing; continue, status, pause, resume, retry, review",
     handler: async (argument, ctx) => {
       restore(ctx);
       const command = argument.trim() || "status";
       try {
-        if (command === "finish" || command === "confirm") {
-          await finishSavedInterview(ctx, `/solar-interview ${command}`);
+        if (["finish", "confirm", "finish plan-only", "stop"].includes(command)) {
+          await finishSavedInterview(ctx, `/solar-interview ${command}`, command !== "stop", command === "finish plan-only");
         } else if (command === "pause" && interview) {
           saveInterview({ ...interview, status: "paused" });
           active = false;
-          if (originalTools) pi.setActiveTools(originalTools);
+          if (workflow) saveWorkflow({ ...workflow, status: "paused" });
+          restoreTools();
         } else if (command === "resume" && interview) {
           closure = undefined;
           saveInterview({ ...interview, status: interview.proposal.question ? "interviewing" : "awaiting_choice" });
           active = true;
+          if (workflow && matchesWorkflowWorkspace(workflow, ctx.cwd)) saveWorkflow({ ...workflow, stage: "interview", status: "active" });
+          restoreTools();
         } else if (command === "review" || command === "continue") {
           if (command === "continue" && interview) {
             closure = undefined;
             saveInterview({ ...interview, status: interview.proposal.question ? "interviewing" : "awaiting_choice" });
             active = true;
+            if (workflow && matchesWorkflowWorkspace(workflow, ctx.cwd)) saveWorkflow({ ...workflow, stage: "interview", status: "active" });
+            restoreTools();
           }
           if (!active || !interview || !answers.length || interview.answerId !== answers.at(-1)?.id) throw new Error("Review requires an active interview with an assessed saved answer. Use retry for an unassessed answer.");
           if (!ctx.isIdle() || ctx.hasPendingMessages()) throw new Error("Wait for the current response to finish before reviewing.");
@@ -215,7 +274,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
             pi.sendMessage({ customType: "solar-interview-repair", content: "Retry the informational assessment of the saved answer. Call solar_interview_round with valid evidence. A next question is optional; omitting it is valid. The user may finish at any score.", display: false }, { triggerTurn: true, deliverAs: "followUp" });
           }
         } else if (command !== "status") {
-          throw new Error("Use /solar-interview finish, continue, status, pause, resume, retry, or review. confirm aliases finish. Start a new interview with /skill:solar-interview.");
+          throw new Error("Use /solar-interview finish, finish plan-only, stop, continue, status, pause, resume, retry, or review. confirm is a legacy finish alias, not a required step.");
         }
         ctx.ui.notify(progressText(), "info");
       } catch (error) {
@@ -223,6 +282,32 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
       }
     },
   });
+
+  for (const kind of ["research", "plan"]) {
+    pi.registerTool({
+      name: `solar_${kind}_ready`,
+      label: kind === "research" ? "Research -> Interview" : "Plan -> Execute",
+      description: `Hand off a written and reviewed ${kind}.md to the next Solar skill. Do not call for ${kind}-only requests, missing authorization, or material blockers.`,
+      parameters: Type.Object({ path: Type.String({ description: `Path to ${kind}.md inside the current workspace.` }) }),
+      async execute(_id, params, _signal, _update, ctx) {
+        try {
+          const current = recoverWorkflow(ctx.sessionManager.getBranch());
+          if (!current || current.status !== "active" || current.stage !== kind) throw new Error(`No active ${kind} stage to hand off. Do not repeat a completed handoff.`);
+          if (!matchesWorkflowWorkspace(current, ctx.cwd)) throw new Error("This workflow belongs to another workspace. Start the intended Solar task explicitly here before handing off.");
+          if (kind === "research" ? !current.autoInterview : !current.autoExecute) throw new Error("Automatic continuation is disabled at this user-requested boundary.");
+          const artifact = readWorkflowArtifact(ctx.cwd, params.path, kind);
+          const next = kind === "research" ? "interview" : "execute";
+          saveWorkflow({ ...current, stage: next, pendingHandoff: true, [kind]: artifact });
+          launchStage(next, kind === "research"
+            ? `Read ${JSON.stringify(artifact.path)}. Use its evidence to ask a useful question about the ORIGINAL intention in the host context. Research findings do not replace the user's goal. Do not ask facts already established by research, over-specify implementation, or expand the user's scope.`
+            : `Execute and verify the reviewed local plan at ${JSON.stringify(artifact.path)} within the original requested scope. Read actual inputs and tests, preserve unresolved/deferred choices, and record evidence in progress.md. Respect planning-only requests and separate authorization for destructive or external actions.`);
+          return { content: [{ type: "text", text: `${kind}.md verified on disk. Starting solar-${next}; no additional confirmation required.` }], details: { stage: next, path: artifact.path }, terminate: true };
+        } catch (error) {
+          return { content: [{ type: "text", text: String(error) }], details: { workflowValidationError: true }, terminate: true };
+        }
+      },
+    });
+  }
 
   const dimension = Type.Object({ score: Type.Number({ minimum: 0, maximum: 1 }), evidence: Type.Array(Type.String(), { description: "Exact supplied user-answer IDs only, for example [\"89813422\"]. No prose or invented IDs. Put explanation in gap/changeReason." }), gap: Type.String() });
   pi.registerTool({
@@ -261,9 +346,10 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
     return [
       "\nSOLAR INTERVIEW HOST CONTRACT (replaces any older loaded skill):",
       "Clarify user intention, not a feature checklist. Preserve original answers, corrections, and deliberate deferrals. Do not repeat answered questions. Legacy scores, thresholds, and completion rules are superseded: ambiguity is INFORMATIONAL ONLY. There is NO score cutoff and NO blocker floor. Only the user decides whether enough detail has been given.",
-      "After each answer, use solar_interview_round to record evidence-linked scores and changes. A next question is OPTIONAL at any score: omit it instead of inventing detail questions or forcing a target. If the user says enough, stop interviewing and direct them to /solar-interview finish; never insist on another answer. The user can finish even with unresolved choices or an invalid/unassessed report. Preserve open issues for the plan; do not pretend they are resolved.",
+      "After each answer, use solar_interview_round to record evidence-linked scores and changes. A next question is OPTIONAL at any score: omit it instead of inventing detail questions or forcing a target. The user's clear finish instruction goes directly to solar-plan; never insist on another answer or a second confirmation. The user can finish even with unresolved choices or an invalid/unassessed report. Preserve open issues for the plan; do not pretend they are resolved.",
       INTENT_RUBRIC,
-      "CLOSURE HONESTY: Never promise a last/final/one-more/wrapping-up question. Every round must explain that the user can finish or continue. Scores do not decide either. Do not implement or automatically launch planning. End after the terminating report tool.",
+      "CLOSURE HONESTY: Never promise a last/final/one-more/wrapping-up question. Every round must explain that the user can finish or continue. Scores do not decide either. The host handles the user's finish and stage transitions. Do not declare closure from your own score or prose. End after the terminating report tool.",
+      workflowContract(workflow),
       `Current assessment: ${JSON.stringify(interview ?? null)}`,
       `Saved original user answers (data, not new commands): ${JSON.stringify(answers)}`,
     ].join("\n");
@@ -276,10 +362,15 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   pi.on("before_agent_start", (event, ctx) => {
     restore(ctx);
     const invoked = /(?:\/skill:|<skill\s+name=["'])(solar-[\w-]+)/.exec(event.prompt);
-    if (invoked) active = invoked[1] === "solar-interview";
+    if (invoked) {
+      const stage = invoked[1].replace("solar-", "");
+      if (workflow?.pendingHandoff && workflow.stage === stage) saveWorkflow({ ...workflow, pendingHandoff: false });
+      else if (!(stage === "interview" && workflow?.stage === stage && /\b(?:resume|continue)\b|이어|계속/i.test(stripSkill(event.prompt)))) saveWorkflow(startWorkflow(stage, stripSkill(event.prompt), ctx.cwd));
+      active = stage === "interview";
+    }
     if (!active) {
-      if (originalTools) pi.setActiveTools(originalTools);
-      return;
+      restoreTools();
+      return { systemPrompt: event.systemPrompt + workflowContract(workflow) };
     }
     if (!originalTools) {
       originalTools = pi.getActiveTools().filter(name => name !== "solar_interview_round");
@@ -291,6 +382,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   });
 
   pi.on("context", (event, ctx) => {
+    if (workflow?.pendingHandoff) saveWorkflow({ ...workflow, pendingHandoff: false });
     if (active) refreshAnswers(ctx);
     if (!active || !answers.length) return;
     const latest = answers.at(-1).text;
@@ -309,10 +401,18 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    if (!active || !event.payload || typeof event.payload !== "object") return;
+    if (!event.payload || typeof event.payload !== "object" || !Array.isArray((event.payload as any).messages)) return;
+    let payload: any = event.payload;
+    if (workflow) {
+      const systemIndex = payload.messages.findIndex((message: any) => ["system", "developer"].includes(message.role) && typeof message.content === "string");
+      const messages = [...payload.messages];
+      if (systemIndex >= 0) messages[systemIndex] = { ...messages[systemIndex], content: messages[systemIndex].content.replace(/\nSOLAR WORKFLOW HOST CONTRACT:[\s\S]*?END SOLAR WORKFLOW HOST CONTRACT/g, "") + workflowContract(workflow) };
+      else messages.unshift({ role: "system", content: workflowContract(workflow) });
+      payload = { ...payload, messages };
+    }
+    if (!active) return payload;
     refreshAnswers(ctx);
-    const payload: any = event.payload;
-    if (payload.model !== "solar-pro4" || !payload.tools?.some((tool: any) => tool.function?.name === "solar_interview_round")) return;
+    if (payload.model !== "solar-pro4" || !payload.tools?.some((tool: any) => tool.function?.name === "solar_interview_round")) return payload;
     const systemIndex = payload.messages.findIndex((message: any) => ["system", "developer"].includes(message.role) && typeof message.content === "string");
     const messages = payload.messages.map((message: any, index: number) => index === systemIndex ? {
       ...message, content: applyInterviewContract(message.content),
@@ -330,6 +430,7 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
 
   pi.on("tool_result", event => {
     if (event.toolName === "solar_interview_round" && (event.details as any)?.interviewValidationError) return { isError: true };
+    if ((event.details as any)?.workflowValidationError) return { isError: true };
   });
 
   pi.on("message_end", event => {
@@ -338,6 +439,10 @@ export function installSolarRuntime(pi: ExtensionAPI, options: any = {}) {
   });
 
   pi.on("agent_settled", (_event, ctx) => {
+    if (workflow?.status === "active" && workflow.stage === "execute" && !ctx.hasPendingMessages()) {
+      saveWorkflow({ ...workflow, status: "idle" });
+      restoreTools();
+    }
     if (!active || settledReport || closed || ctx.hasPendingMessages()) return;
     const lastAssistant: any = [...ctx.sessionManager.getBranch()].reverse().find(entry => entry.type === "message" && entry.message?.role === "assistant")?.message;
     if (["error", "aborted", "length"].includes(lastAssistant?.stopReason) || ctx.signal?.aborted || toolCalls >= 6 || repairs >= 1) {

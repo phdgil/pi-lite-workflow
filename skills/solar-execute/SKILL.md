@@ -1,6 +1,6 @@
 ---
 name: solar-execute
-description: Execute an explicitly requested local task or approved plan in small verified steps with a resumable Markdown checklist. Use for lightweight implementation in pi, not open-ended autonomous orchestration.
+description: Execute the reviewed Solar plan within the original requested local scope in small verified steps with a resumable Markdown checklist.
 ---
 
 # Solar Execute
@@ -13,7 +13,7 @@ The task folder stores notes, not source code. Resolve user-supplied source/test
 
 For Windows directory discovery, use `Get-ChildItem -LiteralPath . -Force` in powershell, not `ls -la` or Unix paths. Send one command per tool call; do not use `&&` (unsupported by Windows PowerShell 5.1).
 
-1. An explicit user request to implement a named plan authorizes its stated local scope. A plan file alone is not approval. If the user requested planning only, do not implement. Preserve unrelated changes and credentials; do not install packages, commit, publish, or change external systems without the corresponding authorization.
+1. Use the original requested local scope and reviewed plan handed off by the host. Do not demand another confirmation for work already requested. A plan file or model-written handoff alone is not permission to expand scope. If the user requested research/planning only, or the next action is destructive or outside the original authority, stop at that boundary. Preserve unrelated changes and credentials; do not install packages, commit, publish, or change external systems without the corresponding authorization.
 2. Write `progress.md` with at most five current steps and their acceptance checks. On resume, verify recorded completed work still exists; do not repeat successful steps unnecessarily or trust a checkbox over contradictory test results.
 3. Implement the next incomplete step using read/edit/write. Keep file operations out of nested shell strings. On Windows prefer the native powershell tool for existing test commands.
 4. Run the smallest relevant check. Mark a step done only after its output is verified. On failure, inspect the error and make one targeted correction. If the same step fails again, record the error and set `Status: blocked`; stop rather than guessing more commands.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { interviewDisplayNote, interviewRoundColor, renderStyledInterview, renderStyledPendingInterview } from "./interview-display.mjs";
-import { renderCurrentInterview } from "./interview-report.mjs";
+import { interviewDisplayNote, interviewRoundColor, renderStyledInterview, renderStyledPendingInterview } from "./interview-display.ts";
+import { renderCurrentInterview } from "./interview-report.ts";
 
 const theme = {
   fg: (color, text) => `<${color}>${text}</${color}>`,

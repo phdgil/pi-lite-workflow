@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessInterview, confirmInterview, finishInterview, isInterviewFinishRequest, recoverInterview, renderInterview, INTERVIEW_STATE, INTERVIEW_REVIEW_STATE, INTERVIEW_CLOSURE_STATE } from "./interview.mjs";
+import { assessInterview, confirmInterview, finishInterview, isInterviewFinishRequest, recoverInterview, renderInterview, INTERVIEW_STATE, INTERVIEW_REVIEW_STATE, INTERVIEW_CLOSURE_STATE } from "./interview.ts";
 
 const answers = [{ id: "answer-1", text: "Offline; success is independent reasoning." }];
 function proposal(score = 0.5) {
