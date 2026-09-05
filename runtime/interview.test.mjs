@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import { assessInterview, confirmInterview, finishInterview, isInterviewFinishRequest, recoverInterview, renderInterview, INTERVIEW_STATE, INTERVIEW_REVIEW_STATE, INTERVIEW_CLOSURE_STATE } from "./interview.ts";
 
 const answers = [{ id: "answer-1", text: "Offline; success is independent reasoning." }];
+
+test("legacy Solar sessions preserve answered questions and closure after the Lite rename", () => {
+  const entries = [{ type: "message", id: "old-start", message: { role: "user", content: '<skill name="solar-interview">Old instructions</skill>\nOriginal intention.' } }];
+  let recovered = recoverInterview(entries);
+  assert.equal(recovered.active, true);
+  assert.equal(recovered.anchorId, "old-start");
+  assert.equal(recovered.answers[0].text, "Original intention.");
+  const closure = finishInterview(undefined, recovered.answers, recovered.anchorId, "Enough.");
+  recovered = recoverInterview([...entries, { type: "custom", customType: "solar-interview-closure-v1", data: closure }]);
+  assert.equal(recovered.active, false);
+  assert.deepEqual(recovered.closure, closure);
+});
 function proposal(score = 0.5) {
   const dimension = () => ({ score, evidence: ["answer-1"], gap: score < 1 ? "Meaning needs clarification" : "" });
   return { goal: dimension(), constraints: dimension(), success: dimension(), blockers: [], intent: "Improve independent reasoning offline.", changeReason: "The user defined the intended outcome.", question: "What observable behavior demonstrates independent reasoning?" };
@@ -12,7 +24,7 @@ test("every assessed round displays informational score, change, and user choice
   const first = assessInterview(proposal(), undefined, answers, "answer-1");
   const next = assessInterview(proposal(0.7), first, [...answers, { id: "answer-2", text: "A concrete example." }], "answer-1");
   assert.match(renderInterview(first), /50.0%.*no prior verified score.*informational only/);
-  assert.match(renderInterview(first), /\/solar-interview finish.*ANY score/);
+  assert.match(renderInterview(first), /\/lite-interview finish.*ANY score/);
   assert.match(renderInterview(next), /30.0%.*-20.0 percentage points.*round 2/);
   assert.match(renderInterview(next, true), /모호성 30.0%/);
 });
@@ -55,20 +67,20 @@ test("invalid evidence and repeated assessment cannot fabricate progress", () =>
 });
 
 test("reload retains original answers and assessment without rewriting legacy brief", () => {
-  const start = { type: "message", id: "answer-1", message: { role: "user", content: '<skill name="solar-interview">old instructions</skill> My real goal' } };
+  const start = { type: "message", id: "answer-1", message: { role: "user", content: '<skill name="lite-interview">old instructions</skill> My real goal' } };
   const state = assessInterview(proposal(), undefined, answers, "answer-1");
   const entries = [start, { type: "custom", customType: INTERVIEW_STATE, data: state }];
   const recovered = recoverInterview(entries);
   assert.equal(recovered.active, true);
   assert.equal(recovered.answers[0].text, "My real goal");
   assert.deepEqual(recovered.state, state);
-  entries.push({ type: "message", id: "answer-2", message: { role: "user", content: "/skill:solar-plan plan only" } });
+  entries.push({ type: "message", id: "answer-2", message: { role: "user", content: "/skill:lite-plan plan only" } });
   assert.equal(recoverInterview(entries).active, false);
 });
 
 test("legacy option answers retain the question and choices they answer", () => {
   const recovered = recoverInterview([
-    { type: "message", id: "start", message: { role: "user", content: "/skill:solar-interview Clarify my intention" } },
+    { type: "message", id: "start", message: { role: "user", content: "/skill:lite-interview Clarify my intention" } },
     { type: "message", id: "question", message: { role: "assistant", content: "Choose A: independent reasoning; B: speed." } },
     { type: "message", id: "reply", message: { role: "user", content: "A" } },
   ]);
@@ -83,12 +95,12 @@ test("a questionnaire cannot masquerade as one interview question", () => {
 });
 
 test("a new skill invocation starts a separate interview; resume retains the original", () => {
-  const first = { type: "message", id: "old-start", message: { role: "user", content: "/skill:solar-interview First task" } };
+  const first = { type: "message", id: "old-start", message: { role: "user", content: "/skill:lite-interview First task" } };
   const old = assessInterview(proposal(0.99), undefined, answers, "old-start");
   const entries = [first, { type: "custom", customType: INTERVIEW_STATE, data: confirmInterview(old) }];
-  const resumed = recoverInterview([...entries, { type: "message", id: "resume", message: { role: "user", content: "/skill:solar-interview Resume the interview" } }]);
+  const resumed = recoverInterview([...entries, { type: "message", id: "resume", message: { role: "user", content: "/skill:lite-interview Resume the interview" } }]);
   assert.equal(resumed.anchorId, "old-start");
-  const fresh = recoverInterview([...entries, { type: "message", id: "new-start", message: { role: "user", content: "/skill:solar-interview A different task" } }]);
+  const fresh = recoverInterview([...entries, { type: "message", id: "new-start", message: { role: "user", content: "/skill:lite-interview A different task" } }]);
   assert.equal(fresh.anchorId, "new-start");
   assert.equal(fresh.state, undefined);
   assert.deepEqual(fresh.answers.map(answer => answer.id), ["new-start"]);
@@ -143,7 +155,7 @@ test("a missing next question is valid even with a high ambiguity score and open
     const state = assessInterview({ ...proposal(0.5), question, blockers: ["An issue left for planning"] }, undefined, answers, "answer-1");
     assert.equal(state.status, "awaiting_choice");
     assert.equal(state.ambiguity, 50);
-    assert.match(renderInterview(state), /\/solar-interview finish/);
+    assert.match(renderInterview(state), /\/lite-interview finish/);
   }
 });
 
@@ -156,7 +168,7 @@ test("user closure preserves unassessed answers and cancels pending review acros
   assert.deepEqual(closure.assessment, first);
   assert.equal(finishInterview(undefined, answers, "answer-1", "finish").assessment, null);
   const entries = [
-    { type: "message", id: "answer-1", message: { role: "user", content: "/skill:solar-interview Start" } },
+    { type: "message", id: "answer-1", message: { role: "user", content: "/skill:lite-interview Start" } },
     { type: "custom", customType: INTERVIEW_STATE, data: first },
     { type: "custom", customType: INTERVIEW_REVIEW_STATE, data: { anchorId: "answer-1", answerId: "answer-1", status: "pending" } },
     { type: "custom", customType: INTERVIEW_CLOSURE_STATE, data: finishInterview(first, answers, "answer-1", "finish", true) },
@@ -175,7 +187,7 @@ test("clear direct finish replies are recognized, but hypothetical or quoted tex
 test("an unfinished saved-answer review survives restart and clears only on accepted review", () => {
   const first = assessInterview(proposal(0.99), undefined, answers, "answer-1");
   const entries = [
-    { type: "message", id: "answer-1", message: { role: "user", content: "/skill:solar-interview Initial intention" } },
+    { type: "message", id: "answer-1", message: { role: "user", content: "/skill:lite-interview Initial intention" } },
     { type: "custom", customType: INTERVIEW_STATE, data: first },
     { type: "custom", customType: INTERVIEW_REVIEW_STATE, data: { anchorId: "answer-1", answerId: "answer-1", status: "pending" } },
   ];

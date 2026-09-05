@@ -1,13 +1,13 @@
 ---
-name: solar-plan
-description: Turn the research-grounded interview into bounded executable steps with design and risk self-review, then hand off to solar-execute within the requested local scope.
+name: lite-plan
+description: Turn the research-grounded interview into bounded executable steps with design and risk self-review, then hand off to lite-execute within the requested local scope.
 ---
 
-# Solar Plan
+# Lite Plan
 
 Use pi's read/write tools. This is ONE model doing sequential self-review, not independent agents or consensus. Do not launch subagents or invoke another harness.
 
-Use the user's task folder, otherwise `solar-work/<short-task-name>` under the current workspace. Preserve unrelated plans. Read the task's `research.md`, its `brief.md` if present, and the few project files needed to understand the requested change. In the research -> interview -> plan workflow, use the user-finished Solar interview handoff in this same pi conversation as the intent specification; a legacy brief does not override the latest saved answers. Carry unresolved issues, deferred choices, and any stale-assessment marker into the plan instead of claiming they were resolved. If the interview is still active rather than user-finished, stop and request an explicit finish decision rather than inventing one.
+Use the user's task folder, otherwise `lite-work/<short-task-name>` under the current workspace. Preserve unrelated plans. Read the task's `research.md`, its `brief.md` if present, and the few project files needed to understand the requested change. In the research -> interview -> plan workflow, use the user-finished Lite interview handoff in this same pi conversation as the intent specification; a legacy brief does not override the latest saved answers. Carry unresolved issues, deferred choices, and any stale-assessment marker into the plan instead of claiming they were resolved. If the interview is still active rather than user-finished, stop and request an explicit finish decision rather than inventing one.
 
 The task folder stores notes, not source code. Resolve user-supplied source/test paths from the current workspace unless explicitly told otherwise. Read existing source and tests before proposing changes; if a path fails, locate the file rather than assume it must be created. Preserve existing interfaces and tests unless changing them is requested. Current user constraints override a brief's assumptions.
 
@@ -18,7 +18,7 @@ For Windows directory discovery, use `Get-ChildItem -LiteralPath . -Force` in po
 3. Review the draft from a design perspective: dependencies, interfaces, scope, and the simplest viable alternative.
 4. Review it from a critical perspective: likely failures, missing tests, unsafe assumptions, and unnecessary work. Revise the plan once to address the findings.
 5. Write the reviewed plan directly to `plan.md` and read it back. Check each step against the original intention and user corrections, not only the research interpretation. Do not expand scope, turn deferred choices into hidden requirements, or request another interview confirmation.
-6. If the plan is executable within the original requested local scope, set `Status: ready` and call `solar_plan_ready` with its path. The host launches `solar-execute`; no second approval is needed for that already-requested scope. If the user requested planning only (`--plan-only` or a plain-language restriction), or a material decision/permission blocks safe execution, record `Status: pending approval` or `Status: blocked`, explain the boundary, and stop without calling the handoff tool. Do not edit product code during planning.
+6. Compare the plan with the original request and saved interview: scope, constraints, success criteria, and deliberate deferrals. Repair conflicts that can be resolved from those saved requirements without asking again. Do not turn deferred implementation choices into conflicts. If no conflicts remain and the local work is executable, set `Status: ready` and call `lite_plan_ready` with `path`, a short evidence-based `alignment` explanation, and `conflicts: []`. The host launches `lite-execute` automatically; do not wait for a second approval. This is your self-review, not independent semantic verification. If planning only (`--plan-only` or a plain-language restriction), or a genuine missing decision/permission blocks safe work, record the boundary and stop. Do not edit product code during planning.
 
 ```markdown
 # Plan

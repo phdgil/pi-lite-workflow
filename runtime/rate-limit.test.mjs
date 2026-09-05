@@ -36,7 +36,7 @@ test("default match leaves unrelated providers and models untouched", async () =
   const limited = createRetryingFetch(baseFetch);
   const otherUrl = "https://example.com/v1/chat/completions";
   const otherInit = { body: JSON.stringify({ model: "solar-pro4" }) };
-  const otherModel = request({ model: "solar-pro3" });
+  const otherModel = request({ model: "lite-pro3" });
 
   await limited(otherUrl, otherInit);
   await limited(...otherModel);

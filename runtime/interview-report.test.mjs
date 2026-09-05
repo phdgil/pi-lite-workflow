@@ -43,7 +43,7 @@ test("pending or failed assessments hide the obsolete question and completion pr
   assert.match(text, /previous.*not.*current/i);
   assert.match(text, /answer.*saved/i);
   assert.match(text, /^\[Processing your answer\] No additional reply needed/);
-  assert.doesNotMatch(text, /OBSOLETE|\/solar-interview confirm/);
+  assert.doesNotMatch(text, /OBSOLETE|\/lite-interview confirm/);
   assert.match(renderPendingInterview(undefined, true, "재평가 중"), /새 질문.*대기/);
 });
 

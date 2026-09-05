@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const PROBE_TYPE = "solar-test-reload-probe";
-const START_TYPE = "solar-test-reload-start";
+const PROBE_TYPE = "lite-test-reload-probe";
+const START_TYPE = "lite-test-reload-start";
 
 function writeGraph(moduleDir, phase, extension) {
   const helperPath = path.join(moduleDir, `reload-helper.${extension}`);
@@ -47,18 +47,18 @@ function writeGraph(moduleDir, phase, extension) {
 }
 
 function writeExtension(extensionDir, phase, extension) {
-  writeFileSync(path.join(extensionDir, "solar-test-reload.ts"), [
+  writeFileSync(path.join(extensionDir, "lite-test-reload.ts"), [
     `import { readProbe } from "../reload-fixture-modules/reload-middle.${extension}";`,
     `const phase = ${JSON.stringify(phase)};`,
     "export default function (pi) {",
-    '  pi.registerCommand("solar-test-reload", {',
+    '  pi.registerCommand("lite-test-reload", {',
     '    description: "Reload the synthetic runtime fixture",',
     "    handler: async (_args, ctx) => {",
     "      await ctx.reload();",
     "      return;",
     "    },",
     "  });",
-    '  pi.registerCommand("solar-test-reload-probe", {',
+    '  pi.registerCommand("lite-test-reload-probe", {',
     '    description: "Record the synthetic runtime fixture version",',
     "    handler: async () => {",
     `      pi.appendEntry(${JSON.stringify(PROBE_TYPE)}, { phase, ...readProbe() });`,
@@ -81,7 +81,7 @@ async function invokeCommand(rpc, command) {
 }
 
 async function assertProbe(rpc, phase, expected) {
-  await invokeCommand(rpc, "/solar-test-reload-probe");
+  await invokeCommand(rpc, "/lite-test-reload-probe");
   const probe = latestEntry(await rpc.entries(), PROBE_TYPE);
   assert.ok(probe, `Reload probe ${phase} did not append an entry`);
   assert.equal(probe.phase, phase);
@@ -93,7 +93,7 @@ function assertNoLoadErrors(rpc, eventStart, stderrStart) {
   const extensionErrors = rpc.events.slice(eventStart).filter(event => event.type === "extension_error");
   assert.deepEqual(extensionErrors, [], `Reload fixture emitted extension errors: ${JSON.stringify(extensionErrors)}`);
   const stderr = rpc.stderr.slice(stderrStart);
-  assert.doesNotMatch(stderr, /Failed to load extension|reload-(?:helper|middle)\.[mt]s|solar-test-reload\.ts/iu, `Reload fixture emitted loader diagnostics:\n${stderr}`);
+  assert.doesNotMatch(stderr, /Failed to load extension|reload-(?:helper|middle)\.[mt]s|lite-test-reload\.ts/iu, `Reload fixture emitted loader diagnostics:\n${stderr}`);
 }
 
 export function prepareReloadFixture(agentDir) {
@@ -114,7 +114,7 @@ export function prepareReloadFixture(agentDir) {
 
     writeGraph(moduleDir, "B", "ts");
     writeExtension(extensionDir, "B", "ts");
-    await invokeCommand(rpc, "/solar-test-reload");
+    await invokeCommand(rpc, "/lite-test-reload");
     assert.deepEqual(latestEntry(await rpc.entries(), START_TYPE), { phase: "B", reason: "reload" });
     await assertProbe(rpc, "B", {
       newHelperType: "function",
@@ -125,7 +125,7 @@ export function prepareReloadFixture(agentDir) {
 
     writeGraph(moduleDir, "C", "ts");
     writeExtension(extensionDir, "C", "ts");
-    await invokeCommand(rpc, "/solar-test-reload");
+    await invokeCommand(rpc, "/lite-test-reload");
     assert.deepEqual(latestEntry(await rpc.entries(), START_TYPE), { phase: "C", reason: "reload" });
     await assertProbe(rpc, "C", {
       newHelperType: "function",

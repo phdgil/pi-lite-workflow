@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0 - 2026-09-05
+
+- Renamed the package and GitHub repository to `pi-lite-workflow` / `phdgil/pi-lite-workflow`, with `lite-research`, `lite-interview`, `lite-plan`, and `lite-execute` as the public skill names.
+- Made `/lite-interview` the primary runtime command and renamed the model-visible handoff tools to `lite_interview_round`, `lite_research_ready`, and `lite_plan_ready`.
+- Retained `/solar-interview` and `/skill:solar-*` as runtime migration aliases without shipping duplicate old `SKILL.md` files. Internal saved `solar-*` state identifiers intentionally remain stable so existing sessions can resume.
+- Reframed the workflow as provider-independent: it is designed for tool-capable models, including smaller and medium models, but is not guaranteed on every model/provider. Solar Pro4 Max remains the only live-tested model combination so far.
+- Made the credential-free Upstage/Max example explicitly optional and provider-specific. The package does not require Upstage, install credentials, enforce a model, change provider/account routing, or save startup defaults.
+- Kept delayed HTTP 429 retries as an optional feature for direct Upstage Solar Pro4 requests rather than a general provider guarantee.
+- Documented fresh v0.3.0 installation from the renamed repository and migration by removing the exact old Git source reported by `pi list`; keys, settings, sessions, and the current legacy-named local checkout remain untouched.
+- Preserved the research -> interview -> plan -> execute contract: research remains evidence rather than a replacement intention, ambiguity remains advisory, user finish starts planning without a second confirmation, and `--research-only` / `--plan-only` remain explicit host boundaries.
+- Expanded plan-ready parsing to accept one to five bounded numbered, bold `Step N`, heading, or task-checkbox formats while ignoring fenced-code examples. The handoff verifies the plan path plus a concise model-supplied alignment statement and conflicts list; conflicts block automatic execution, while an empty list permits already-authorized aligned local work without another approval. This self-review is not independent semantic proof.
+- Recorded actual manual `/skill:lite-plan` use for skip/replan and the normal finish path without a second planner call. General natural-language scope boundaries remain model-level despite recognition of common restrictive phrases.
+- Added generic pi context-hook transport so the original request and research remain available on model calls without rewriting arbitrary provider wire payloads; Solar-specific `tool_choice` and HTTP 429 handling remain isolated.
+- Expanded regression coverage to 69 passing unit/package tests. Fresh isolated real-pi smoke runs passed renamed labels/tools, reload/restart, legacy skill and command aliases, canonical and legacy manual planning-only paths, the whole workflow, marked-step parsing, reported-conflict blocking, the generic fake-provider `mock-medium` fixture with reasoning disabled, and the Upstage Solar Pro4 fixture with Max on the wire. Both modes use loopback mocks and do not establish live non-Solar model quality.
+
 ## 0.2.0 - 2026-09-05
 
 - Added host handoffs: a structurally complete `research.md` starts `solar-interview`, user-directed interview finish starts `solar-plan`, and a structurally ready reviewed `plan.md` starts `solar-execute` for the original requested reversible local scope.

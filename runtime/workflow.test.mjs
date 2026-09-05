@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { matchesWorkflowWorkspace, readWorkflowArtifact, recoverWorkflow, startWorkflow, WORKFLOW_STATE, workflowContract } from "./workflow.ts";
+import { matchesWorkflowWorkspace, readWorkflowArtifact, recoverWorkflow, startWorkflow, validatePlanAlignment, WORKFLOW_STATE, workflowContract } from "./workflow.ts";
 import { finishInterview, INTERVIEW_CLOSURE_STATE, recoverInterview } from "./interview.ts";
 
 const research = "# Research\nStatus: complete\n## Original intention\nHelp users decide, not build my preferred design.\n## Evidence\nLocal source: example.md.\n## Caveats and unknowns\nNo web search available.\n## Useful interview questions\nWhat decision should improve?\n";
@@ -11,14 +11,14 @@ const plan = "# Plan\nStatus: ready\n## Goal and scope\nWrite a local report.\n#
 
 function fixture(callback) {
   const base = realpathSync(os.tmpdir());
-  const root = mkdtempSync(path.join(base, "solar-workflow-unit-"));
+  const root = mkdtempSync(path.join(base, "lite-workflow-unit-"));
   try {
     const workspace = path.join(root, "workspace");
     mkdirSync(workspace);
     return callback(workspace, root);
   } finally {
     assert.equal(path.dirname(realpathSync(root)), base);
-    assert.ok(path.basename(root).startsWith("solar-workflow-unit-"));
+    assert.ok(path.basename(root).startsWith("lite-workflow-unit-"));
     rmSync(root, { recursive: true, force: true });
   }
 }
@@ -44,6 +44,12 @@ test("explicit research-only and plan-only boundaries disable their automatic ha
 test("stopped and idle workflows do not inject an old goal into later requests", () => {
   const current = startWorkflow("execute", "Old task", process.cwd());
   for (const status of ["idle", "stopped", "paused", "workspace_mismatch"]) assert.equal(workflowContract({ ...current, status }), "");
+});
+
+test("plan handoff requires an alignment review and rejects declared interview conflicts", () => {
+  assert.throws(() => validatePlanAlignment({}), /Review the plan/);
+  assert.throws(() => validatePlanAlignment({ alignment: "Compared with the offline requirement.", conflicts: ["Plan requires cloud access despite the offline constraint."] }), /conflicts remain/);
+  assert.deepEqual(validatePlanAlignment({ alignment: "Scope and offline success checks match the interview; algorithm remains deferred.", conflicts: [] }).conflicts, []);
 });
 
 test("workflow handoffs are bound to the canonical workspace", () => fixture((workspace, root) => {
@@ -73,14 +79,31 @@ test("missing, outside-workspace, and incorrectly named artifacts cannot advance
   assert.throws(() => readWorkflowArtifact(workspace, "other.md", "plan"), /plan.md/);
 }));
 
+test("plan handoff accepts bold and heading-style numbered steps without counting checks", () => fixture(workspace => {
+  for (const heading of ["**Step 1 — Write result.md.**", "### Step 1: Write result.md", "**1. Write result.md.**", "1) Write result.md", "- [ ] Write result.md"]) {
+    const formatted = plan.replace("1. Write result.md; verify its required headings by reading it.", `${heading}\n\n- Acceptance check: required heading exists.\n- Validation: read result.md.`);
+    writeFileSync(path.join(workspace, "plan.md"), formatted);
+    assert.equal(readWorkflowArtifact(workspace, "plan.md", "plan").text, formatted, heading);
+  }
+}));
+
+test("five bold steps are valid while six are rejected and fenced examples do not count", () => fixture(workspace => {
+  const steps = Array.from({ length: 5 }, (_, index) => `**Step ${index + 1} — Produce a bounded output.**\n\n- Acceptance check: output exists.\n- Validation: read the output.`).join("\n\n");
+  const formatted = plan.replace("1. Write result.md; verify its required headings by reading it.", `${steps}\n\n\`\`\`text\n1. This is a syntax example, not a step.\n\`\`\``);
+  writeFileSync(path.join(workspace, "plan.md"), formatted);
+  assert.equal(readWorkflowArtifact(workspace, "plan.md", "plan").text, formatted);
+  writeFileSync(path.join(workspace, "plan.md"), formatted.replace("## Design review", "**Step 6 — Additional work.**\n## Design review"));
+  assert.throws(() => readWorkflowArtifact(workspace, "plan.md", "plan"), /Found 6/);
+}));
+
 test("post-interview planning and execution messages never become interview answers", () => {
   const answers = [{ id: "original", text: "Original intention" }];
   const closure = finishInterview(undefined, answers, "original", "Enough details");
   const recovered = recoverInterview([
-    { type: "message", id: "original", message: { role: "user", content: "/skill:solar-interview Original intention" } },
+    { type: "message", id: "original", message: { role: "user", content: "/skill:lite-interview Original intention" } },
     { type: "custom", customType: INTERVIEW_CLOSURE_STATE, data: closure },
-    { type: "message", id: "planning", message: { role: "user", content: "/skill:solar-plan Plan the requested work" } },
-    { type: "message", id: "execution", message: { role: "user", content: "/skill:solar-execute Execute the plan" } },
+    { type: "message", id: "planning", message: { role: "user", content: "/skill:lite-plan Plan the requested work" } },
+    { type: "message", id: "execution", message: { role: "user", content: "/skill:lite-execute Execute the plan" } },
   ]);
   assert.deepEqual(recovered.answers.map(answer => answer.id), ["original"]);
   assert.equal(recovered.closure.assessment, null);

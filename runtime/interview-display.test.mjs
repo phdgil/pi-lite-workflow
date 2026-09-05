@@ -44,7 +44,7 @@ test("Korean question framing and score remain readable without color", () => {
   const text = renderStyledInterview(koreanState, true, plainTheme);
   assert.ok(text.startsWith("질문 13 · 선택 차례\n\n어떤 결과가 가장 중요한가요?\n\n"));
   assert.match(text, /모호성 36.0%.*\+4.5 %p.*참고 정보/);
-  assert.match(text, /\/solar-interview finish/);
+  assert.match(text, /\/lite-interview finish/);
   assert.ok(text.includes(interviewDisplayNote(state, true)));
 });
 
@@ -57,7 +57,7 @@ test("pending phases do not highlight or repeat obsolete questions and confirmat
         assert.ok(text.startsWith(`<bold><${color}>`));
         assert.ok(!text.includes(state.proposal.question));
         assert.ok(!text.includes(state.proposal.intent));
-        assert.doesNotMatch(text, /YOUR TURN|답변 차례|\/solar-interview confirm|<accent>/);
+        assert.doesNotMatch(text, /YOUR TURN|답변 차례|\/lite-interview confirm|<accent>/);
         assert.match(text, /36.0%/);
         assert.match(text, /Saved answer/);
       }

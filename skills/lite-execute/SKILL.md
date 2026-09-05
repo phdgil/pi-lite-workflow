@@ -1,13 +1,13 @@
 ---
-name: solar-execute
+name: lite-execute
 description: Execute the reviewed Solar plan within the original requested local scope in small verified steps with a resumable Markdown checklist.
 ---
 
-# Solar Execute
+# Lite Execute
 
 Use pi's built-in tools and one progress file. This is a bounded execution checklist, not a background goal engine. Do not launch subagents, call another harness, or create platform goal state.
 
-Use the user's task folder, otherwise `solar-work/<short-task-name>` under the workspace. Read its `plan.md` and `progress.md` when present and relevant to the current task.
+Use the user's task folder, otherwise `lite-work/<short-task-name>` under the workspace. Read its `plan.md` and `progress.md` when present and relevant to the current task.
 
 The task folder stores notes, not source code. Resolve user-supplied source/test paths from the current workspace unless told otherwise. Read the actual implementation and tests first: a plan is not proof of file locations or interfaces. Current user constraints and existing tests override a plan's assumptions. Correct the checklist within authorized scope rather than replacing or inventing tests to fit an incorrect plan.
 

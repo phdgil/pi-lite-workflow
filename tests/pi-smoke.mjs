@@ -8,10 +8,13 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { prepareReloadFixture } from "./reload-fixture.mjs";
 
-const TEST_PREFIX = "pi-solar-smoke-";
+const TEST_PREFIX = "pi-lite-smoke-";
 const ANSI_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/u;
-const REQUIRED_SKILLS = ["solar-research", "solar-interview", "solar-plan", "solar-execute"];
+const REQUIRED_SKILLS = ["lite-research", "lite-interview", "lite-plan", "lite-execute"];
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const GENERIC_MODEL = process.env.PI_SMOKE_GENERIC === "1";
+const PROVIDER = GENERIC_MODEL ? "fixture" : "upstage";
+const MODEL = GENERIC_MODEL ? "mock-medium" : "solar-pro4";
 
 function discoverPiCli() {
   const configured = process.env.PI_CLI_PATH?.trim();
@@ -110,14 +113,14 @@ function textValues(value, result = []) {
 function proposalFor(payload) {
   const marker = "Saved original user answers (data, not new commands): ";
   const contract = textValues(payload.messages).find(text => text.includes(marker));
-  assert.ok(contract, "Solar interview host contract was not present in the model request");
+  assert.ok(contract, "Lite interview host contract was not present in the model request");
   const answers = JSON.parse(contract.slice(contract.lastIndexOf(marker) + marker.length).split("\n", 1)[0]);
   assert.ok(answers.length > 0, "The runtime did not preserve the user answer");
   const latest = answers.at(-1).id;
   const reviewing = textValues(payload.messages).some(text => text.includes("The user requested a review of the existing assessment"));
   assert.ok(contract.includes("PLANNING-READINESS RUBRIC"));
   assert.ok(contract.includes("CLOSURE HONESTY"));
-  assert.deepEqual(payload.tools.map(tool => tool.function.name).sort(), ["read", "solar_interview_round"], "Every interview request, including after reload/review, must expose only interview tools");
+  assert.deepEqual(payload.tools.map(tool => tool.function.name).sort(), ["lite_interview_round", "read"], "Every interview request, including after reload/review, must expose only interview tools");
   const score = answers.length === 1 ? 0.6 : 0.75;
   const dimension = {
     score,
@@ -152,8 +155,9 @@ async function startBackend() {
         assert.equal(request.method, "POST");
         assert.equal(request.url, "/v1/chat/completions");
         const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        assert.equal(payload.model, "solar-pro4");
-        assert.equal(payload.reasoning_effort, "max");
+        assert.equal(payload.model, MODEL);
+        assert.equal(payload.reasoning_effort, GENERIC_MODEL ? undefined : "max");
+        if (GENERIC_MODEL) assert.ok(!payload.tool_choice || payload.tool_choice === "auto", "The Solar-specific forced tool choice must not leak into another model");
         assert.ok(!ANSI_PATTERN.test(JSON.stringify(payload)), "ANSI escape reached the model request");
         requests.push(payload);
         if (holdNextRequest) {
@@ -162,8 +166,10 @@ async function startBackend() {
         }
         const action = scripted.shift();
         action?.check?.(payload);
-        const toolArguments = action?.arguments ?? (action?.text ? undefined : proposalFor(payload));
-        const toolName = action?.name ?? "solar_interview_round";
+        const toolArguments = action?.arguments
+          ? action.name === "lite_plan_ready" ? { alignment: "The local output, scope, offline constraint, acceptance checks, and algorithm deferral match the saved interview.", conflicts: [], ...action.arguments } : action.arguments
+          : action?.text ? undefined : proposalFor(payload);
+        const toolName = action?.name ?? "lite_interview_round";
         if (!action?.text) assert.ok(payload.tools?.some(tool => tool.function?.name === toolName), `Tool missing from model request: ${toolName}`);
         const toolCall = {
           index: 0,
@@ -172,8 +178,8 @@ async function startBackend() {
           function: { name: toolName, arguments: JSON.stringify(toolArguments) },
         };
         const events = [
-          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: action?.text ? { role: "assistant", content: action.text } : { role: "assistant", tool_calls: [toolCall] }, finish_reason: null }] },
-          { id: "pi-solar-smoke", object: "chat.completion.chunk", created: 1, model: "solar-pro4", choices: [{ index: 0, delta: {}, finish_reason: action?.text ? "stop" : "tool_calls" }], usage: { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 } },
+          { id: "pi-lite-smoke", object: "chat.completion.chunk", created: 1, model: MODEL, choices: [{ index: 0, delta: action?.text ? { role: "assistant", content: action.text } : { role: "assistant", tool_calls: [toolCall] }, finish_reason: null }] },
+          { id: "pi-lite-smoke", object: "chat.completion.chunk", created: 1, model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: action?.text ? "stop" : "tool_calls" }], usage: { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 } },
         ];
         const body = `${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`;
         response.writeHead(200, { "Content-Type": "text/event-stream", "Content-Length": Buffer.byteLength(body) });
@@ -210,9 +216,9 @@ class RpcClient {
     this.child = spawn(process.execPath, [
       cliPath,
       "--mode", "rpc",
-      "--provider", "upstage",
-      "--model", "solar-pro4",
-      "--thinking", "max",
+      "--provider", PROVIDER,
+      "--model", MODEL,
+      "--thinking", GENERIC_MODEL ? "off" : "max",
       "--offline",
       "--no-context-files",
       "--approve",
@@ -302,8 +308,8 @@ function latestClosure(entries) {
 }
 
 function reportText(entries) {
-  const result = [...entries].reverse().find(entry => entry.type === "message" && entry.message?.role === "toolResult" && entry.message?.toolName === "solar_interview_round");
-  assert.ok(result, "No structured solar_interview_round report was saved");
+  const result = [...entries].reverse().find(entry => entry.type === "message" && entry.message?.role === "toolResult" && entry.message?.toolName === "lite_interview_round");
+  assert.ok(result, "No structured lite_interview_round report was saved");
   return result.message.content.filter(block => block.type === "text").map(block => block.text).join("\n");
 }
 
@@ -312,8 +318,13 @@ function writeFixtures(agentDir, port) {
   const models = JSON.parse(readFileSync(path.join(REPOSITORY_ROOT, "examples/models.upstage.json"), "utf8"));
   assert.equal(models.providers.upstage.apiKey, undefined, "The public example must omit credentials");
   models.providers.upstage.baseUrl = `http://127.0.0.1:${port}/v1`;
+  if (GENERIC_MODEL) {
+    const provider = models.providers.upstage;
+    provider.models = [{ id: MODEL, name: "Synthetic medium-model fixture (not a real model benchmark)", reasoning: false, input: ["text"] }];
+    models.providers = { [PROVIDER]: provider };
+  }
   writeFileSync(path.join(agentDir, "models.json"), `${JSON.stringify(models, null, 2)}\n`, "utf8");
-  writeFileSync(path.join(agentDir, "auth.json"), `${JSON.stringify({ upstage: { type: "api_key", key: "loopback-fixture-key" } })}\n`, "utf8");
+  writeFileSync(path.join(agentDir, "auth.json"), `${JSON.stringify({ [PROVIDER]: { type: "api_key", key: "loopback-fixture-key" } })}\n`, "utf8");
   writeFileSync(path.join(agentDir, "settings.json"), `${JSON.stringify({ retry: { enabled: false, provider: { maxRetries: 0 } } }, null, 2)}\n`, "utf8");
 }
 
@@ -357,8 +368,9 @@ async function main() {
     for (const skill of REQUIRED_SKILLS) {
       assert.ok(commands.some(command => command.name === `skill:${skill}` && command.source === "skill"), `Installed skill not discovered: ${skill}`);
     }
-    assert.ok(commands.some(command => command.name === "solar-interview" && command.source === "extension"), "Installed solar-interview command not discovered");
-    console.log(`[pi-smoke] discovered ${REQUIRED_SKILLS.length} skills and solar-interview without resource flags`);
+    assert.ok(commands.some(command => command.name === "lite-interview" && command.source === "extension"), "Installed lite-interview command not discovered");
+    for (const legacy of ["solar-interview", "solar-rate", "skill:solar-research", "skill:solar-interview", "skill:solar-plan", "skill:solar-execute"]) assert.ok(commands.some(command => command.name === legacy && command.source === "extension"), `Legacy command missing: ${legacy}`);
+    console.log(`[pi-smoke] discovered ${REQUIRED_SKILLS.length} skills and lite-interview without resource flags`);
 
     await rpc.prompt("/skill:solar-interview Improve student learning offline. Do not implement.");
     let entries = await rpc.entries();
@@ -381,9 +393,9 @@ async function main() {
     assert.equal(second.delta, -15);
     assert.equal(second.status, "awaiting_choice");
     assert.equal(backend.requests.length, 2, "An omitted next question must not trigger repair or extra inference");
-    assert.match(reportText(entries), /\/solar-interview finish.*ANY score/);
+    assert.match(reportText(entries), /\/lite-interview finish.*ANY score/);
     const answersBeforeReview = entries.filter(entry => entry.type === "message" && entry.message?.role === "user").length;
-    await rpc.prompt("/solar-interview review");
+    await rpc.prompt("/lite-interview review");
     entries = await rpc.entries();
     const reviewed = latestAssessment(entries);
     assert.equal(reviewed.round, second.round);
@@ -398,13 +410,13 @@ async function main() {
     assert.equal(second.threshold, undefined);
     const sessionFile = (await rpc.request("get_state")).data.sessionFile;
     backend.holdNext();
-    await rpc.request("prompt", { message: "/solar-interview review" });
+    await rpc.request("prompt", { message: "/lite-interview review" });
     const reviewDeadline = Date.now() + 5_000;
     while (backend.requests.length < 4 && Date.now() < reviewDeadline) await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(backend.requests.length, 4, "The interrupted review must have started");
     await rpc.close();
     rpc = new RpcClient(cliPath, workspace, environment, sessionFile);
-    await rpc.request("prompt", { message: "/solar-interview stop" });
+    await rpc.request("prompt", { message: "/lite-interview stop" });
     const closure = latestClosure(await rpc.entries());
     assert.equal(closure.status, "user_finished");
     assert.equal(closure.assessmentCurrent, false, "An interrupted review must be disclosed, not presented as a current assessment");
@@ -412,7 +424,7 @@ async function main() {
     assert.equal(closure.answers.length, 2);
     assert.equal(closure.assessment.proposal.deferred.length, 1);
     assert.equal(backend.requests.length, 4, "Stop must save without starting another stage");
-    assert.ok(backend.requests.every(payload => payload.reasoning_effort === "max"), "Max reasoning effort was not preserved on the wire");
+    assert.ok(backend.requests.every(payload => payload.reasoning_effort === (GENERIC_MODEL ? undefined : "max")), "The selected model's reasoning configuration changed on the wire");
     assert.equal(backend.errors.length, 0, backend.errors.map(String).join("\n"));
 
     await rpc.close();
@@ -421,11 +433,11 @@ async function main() {
     assert.deepEqual(latestClosure(await rpc.entries()), closure, "User closure must survive restart and confirm must be an idempotent finish alias");
     assert.equal(backend.requests.length, 4);
     backend.holdNext();
-    await rpc.request("prompt", { message: "/skill:solar-interview New separate task: help students organize sources." });
+    await rpc.request("prompt", { message: "/skill:lite-interview New separate task: help students organize sources." });
     const pendingDeadline = Date.now() + 5_000;
     while (backend.requests.length < 5 && Date.now() < pendingDeadline) await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(backend.requests.length, 5);
-    await rpc.request("prompt", { message: "/solar-interview stop" });
+    await rpc.request("prompt", { message: "/lite-interview stop" });
     const unassessedClosure = latestClosure(await rpc.entries());
     assert.notEqual(unassessedClosure.anchorId, closure.anchorId);
     assert.equal(unassessedClosure.status, "user_finished");
@@ -435,10 +447,10 @@ async function main() {
     assert.equal(backend.requests.length, 5, "Finishing an unassessed answer must cancel, not request more inference");
     const originalTask = "Help learners choose an offline method. Research context, clarify my intention, then plan and create result.md with the chosen learning goal. Keep implementation local.";
     const research = "# Research\nStatus: complete\n## Original intention\nHelp learners choose an offline method.\n## Evidence\nSupplied local fixture: learners can read Markdown; web search unavailable.\n## Caveats and unknowns\nThe learner outcome is a user decision, not a fact we can research.\n## Useful interview questions\nWhat observable learner behavior would demonstrate success?\n";
-    const plan = "# Plan\nStatus: ready\n## Goal and scope\nWrite result.md only, preserving other inputs.\n## Steps and validation\n1. Write result.md with the learning goal; read it back to verify the goal.\n## Design review\nOne local Markdown file is sufficient.\n## Risk review and revisions\nNo network or confidential inputs needed.\n## Acceptance criteria\nresult.md describes independent method selection.\n## Remaining uncertainties\nExact algorithms remain deferred to student discovery.\n";
+    const plan = "# Plan\nStatus: ready\n## Goal and scope\nWrite result.md only, preserving other inputs.\n## Steps and validation\n**Step 1 — Write result.md with the learning goal.**\n- Acceptance check: the learning goal is present.\n- Validation: read result.md to verify the goal.\n## Design review\nOne local Markdown file is sufficient.\n## Risk review and revisions\nNo network or confidential inputs needed.\n## Acceptance criteria\nresult.md describes independent method selection.\n## Remaining uncertainties\nExact algorithms remain deferred to student discovery.\n";
     backend.script([
       { name: "write", arguments: { path: "research.md", content: research } },
-      { name: "solar_research_ready", arguments: { path: "research.md" } },
+      { name: "lite_research_ready", arguments: { path: "research.md" } },
       { check(payload) {
         const text = JSON.stringify(payload.messages);
         assert.ok(text.includes(originalTask), "Research handoff lost the original intention");
@@ -446,7 +458,7 @@ async function main() {
         assert.ok(text.includes("Do not tighten implementation details"), "Interview lost its scope guard");
       } },
     ]);
-    await rpc.prompt(`/skill:solar-research ${originalTask}`);
+    await rpc.prompt(`/skill:lite-research ${originalTask}`);
     entries = await rpc.entries();
     assert.equal(latestAssessment(entries).round, 1);
     assert.equal(latestAssessment(entries).ambiguity, 40);
@@ -459,7 +471,7 @@ async function main() {
         assert.ok(text.includes("Independent method selection demonstrates success."), "Planning lost saved answers");
         assert.ok(text.includes("learners can read Markdown"), "Planning lost research context");
       } },
-      { name: "solar_plan_ready", arguments: { path: "plan.md" } },
+      { name: "lite_plan_ready", arguments: { path: "plan.md" } },
       { name: "write", arguments: { path: "result.md", content: "# Goal\nIndependent method selection.\n" } },
       { name: "read", arguments: { path: "result.md" } },
       { name: "write", arguments: { path: "progress.md", content: "# Progress\nStatus: complete\nVerified by reading result.md: independent method selection is present.\n" } },
@@ -470,7 +482,7 @@ async function main() {
     const finished = latestClosure(entries);
     assert.equal(finished.assessment.ambiguity, 25);
     assert.equal(finished.answers.length, 2);
-    assert.equal(finished.next, "solar-plan");
+    assert.equal(finished.next, "lite-plan");
     assert.equal(backend.requests.length, beforeFinish + 6, "Finish should launch planning and execution, without another interview round or confirmation");
     assert.equal(readFileSync(path.join(workspace, "plan.md"), "utf8"), plan);
     assert.match(readFileSync(path.join(workspace, "progress.md"), "utf8"), /Status: complete/);
@@ -479,41 +491,50 @@ async function main() {
     assert.deepEqual([...new Set(workflowEntries.slice(workflowEntries.findLastIndex(entry => entry.data.stage === "research")).map(entry => entry.data.stage))], ["research", "interview", "plan", "execute"]);
     assert.ok(workflowEntries.at(-1).data.originalTask.includes(originalTask));
     assert.equal(workflowEntries.at(-1).data.status, "idle", "A settled execution must not keep imposing its old goal");
-    backend.script([{ text: "A new unrelated question is not part of the old Solar task.", check(payload) {
-      assert.ok(!JSON.stringify(payload.messages.filter(message => ["system", "developer"].includes(message.role))).includes("SOLAR WORKFLOW HOST CONTRACT"));
-      assert.ok(!payload.tools.some(tool => /^solar_(?:research|plan)_ready$/.test(tool.function.name)));
+    backend.script([{ text: "A new unrelated question is not part of the old Lite task.", check(payload) {
+      assert.ok(!JSON.stringify(payload.messages.filter(message => ["system", "developer"].includes(message.role))).includes("LITE WORKFLOW HOST CONTRACT"));
+      assert.ok(!payload.tools.some(tool => /^lite_(?:research|plan)_ready$/.test(tool.function.name)));
     } }]);
     await rpc.prompt("Unrelated question: say hello without starting another workflow.");
 
     let failedHandoff;
-    for (const command of ["/solar-interview finish plan-only", "/skill:solar-plan --plan-only Review the current requirements."]) {
-      await rpc.prompt("/skill:solar-interview Help create a local report.");
+    for (const command of ["/lite-interview finish plan-only", "/skill:lite-plan --plan-only Review the current requirements.", "/skill:solar-plan --plan-only Review the current requirements."]) {
+      await rpc.prompt("/skill:lite-interview Help create a local report.");
       const beforePlanOnly = backend.requests.length;
       backend.script([
         { name: "write", arguments: { path: "plan.md", content: plan } },
-        { name: "solar_plan_ready", arguments: { path: "plan.md" } },
+        { name: "lite_plan_ready", arguments: { path: "plan.md" } },
       ]);
       await rpc.prompt(command);
       entries = await rpc.entries();
       assert.equal(backend.requests.length, beforePlanOnly + 2, `${command}: a disabled handoff must not start execution`);
-      failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "solar_plan_ready");
+      failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "lite_plan_ready");
       assert.equal(failedHandoff.message.isError, true);
       assert.match(failedHandoff.message.content[0].text, /Automatic continuation is disabled/);
     }
 
+    const beforeConflict = backend.requests.length;
+    backend.script([{ name: "lite_plan_ready", arguments: { path: "plan.md", alignment: "Reviewed against the offline constraint.", conflicts: ["The proposed step requires network access contrary to the interview."] } }]);
+    await rpc.prompt("/skill:lite-plan Review the local plan against the interview before execution.");
+    entries = await rpc.entries();
+    assert.equal(backend.requests.length, beforeConflict + 1, "A declared plan/interview conflict must block automatic execution");
+    failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "lite_plan_ready");
+    assert.equal(failedHandoff.message.isError, true);
+    assert.match(failedHandoff.message.content[0].text, /conflicts remain/);
+
     const beforeResearchOnly = backend.requests.length;
     backend.script([
       { name: "write", arguments: { path: "research.md", content: research } },
-      { name: "solar_research_ready", arguments: { path: "research.md" } },
+      { name: "lite_research_ready", arguments: { path: "research.md" } },
     ]);
-    await rpc.prompt("/skill:solar-research Research an offline teaching context. --research-only");
+    await rpc.prompt("/skill:lite-research Research an offline teaching context. --research-only");
     entries = await rpc.entries();
     assert.equal(backend.requests.length, beforeResearchOnly + 2, "Research-only must not start the interview");
-    failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "solar_research_ready");
+    failedHandoff = [...entries].reverse().find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "lite_research_ready");
     assert.equal(failedHandoff.message.isError, true);
     assert.equal(backend.errors.length, 0, backend.errors.map(String).join("\n"));
     assert.ok(!rpc.events.some(event => event.type === "extension_error"), "Extension emitted a runtime error");
-    console.log("[pi-smoke] PASS install, optional questions, review/restart, user stop, research -> interview -> plan -> execute, original intent/context, no second confirmation, max reasoning, and ANSI safety");
+    console.log(`[pi-smoke] PASS ${PROVIDER}/${MODEL}: install, reload, legacy aliases, review/restart, research -> interview -> plan -> execute, bold steps, alignment/conflict gate, no second confirmation, configured reasoning, and ANSI safety`);
     passed = true;
   } finally {
     if (rpc) await rpc.close();

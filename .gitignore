@@ -23,10 +23,10 @@
 !/runtime/*.test.mjs
 !/skills/
 /skills/*
-!/skills/solar-research/
-!/skills/solar-interview/
-!/skills/solar-plan/
-!/skills/solar-execute/
+!/skills/lite-research/
+!/skills/lite-interview/
+!/skills/lite-plan/
+!/skills/lite-execute/
 /skills/*/*
 !/skills/*/SKILL.md
 !/examples/

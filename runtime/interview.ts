@@ -11,6 +11,10 @@ export function stripSkill(text) {
   return text.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/g, "").trim();
 }
 
+export function invokedSkill(text) {
+  return /^(?:\/skill:|<skill\s+name=["'])(?:lite|solar)-(research|interview|plan|execute)\b/.exec(text.trimStart())?.[1];
+}
+
 export function recoverInterview(entries) {
   let anchor;
   let state;
@@ -22,9 +26,9 @@ export function recoverInterview(entries) {
   for (const entry of entries) {
     if (entry.type === "message" && entry.message?.role === "user") {
       const raw = messageText(entry.message);
-      const match = /(?:\/skill:|<skill\s+name=["'])(solar-[\w-]+)/.exec(raw);
-      if (match) {
-        active = match[1] === "solar-interview";
+      const stage = invokedSkill(raw);
+      if (stage) {
+        active = stage === "interview";
         if (active) closure = undefined;
         const resuming = /\b(?:resume|continue)\b|이어|계속/i.test(stripSkill(raw));
         if (active && (!anchor || !resuming)) {
@@ -113,11 +117,11 @@ export function assessInterview(proposal, previous, answers, anchorId, { reasses
 }
 
 export function renderInterview(state, korean = false) {
-  if (!state) return korean ? "모호성: 평가 대기 (참고 정보). 충분하면 /solar-interview finish로 인터뷰를 끝내고 계획으로 이동할 수 있습니다." : "Ambiguity: awaiting assessment (informational). When you have given enough detail, /solar-interview finish ends the interview so you can move to planning.";
+  if (!state) return korean ? "모호성: 평가 대기 (참고 정보). 충분하면 /lite-interview finish로 인터뷰를 끝내고 계획으로 이동할 수 있습니다." : "Ambiguity: awaiting assessment (informational). When you have given enough detail, /lite-interview finish ends the interview so you can move to planning.";
   const value = state.ambiguity.toFixed(1);
   const delta = state.delta === null ? (korean ? "이전 검증 점수 없음" : "no prior verified score") : `${state.delta >= 0 ? "+" : ""}${state.delta.toFixed(1)} ${korean ? "%p" : "percentage points"}`;
   const heading = korean ? `모호성 ${value}% · 이전 대비 ${delta} · 참고 정보 · 질문 ${state.round}` : `Ambiguity ${value}% | change ${delta} | informational only | round ${state.round}`;
-  const status = state.status === "confirmed" ? (korean ? "이전 버전의 종료 기록입니다. /solar-interview finish로 계획을 시작할 수 있습니다. 재확인은 필요하지 않습니다." : "Legacy closure recorded. /solar-interview finish starts planning; no reconfirmation is needed.") : state.status === "paused" ? (korean ? "일시 중지." : "Paused.") : (korean ? "충분하면 /solar-interview finish로 바로 계획을 시작합니다. 점수와 관계없이 종료할 수 있고 재확인은 필요하지 않습니다. 계속하려면 답변하거나 /solar-interview continue를 사용하세요." : "Enough detail? /solar-interview finish starts planning directly, at ANY score, with no second confirmation. To continue, answer or use /solar-interview continue.");
+  const status = state.status === "confirmed" ? (korean ? "이전 버전의 종료 기록입니다. /lite-interview finish로 계획을 시작할 수 있습니다. 재확인은 필요하지 않습니다." : "Legacy closure recorded. /lite-interview finish starts planning; no reconfirmation is needed.") : state.status === "paused" ? (korean ? "일시 중지." : "Paused.") : (korean ? "충분하면 /lite-interview finish로 바로 계획을 시작합니다. 점수와 관계없이 종료할 수 있고 재확인은 필요하지 않습니다. 계속하려면 답변하거나 /lite-interview continue를 사용하세요." : "Enough detail? /lite-interview finish starts planning directly, at ANY score, with no second confirmation. To continue, answer or use /lite-interview continue.");
   const floor = Number.isFinite(state.raw) && state.ambiguity > state.raw
     ? korean ? `계산 모호성 ${state.raw.toFixed(1)}% (위 수치는 이전 하한 규칙의 기록이며 종료를 막지 않습니다)` : `Raw ${state.raw.toFixed(1)}% (the stored score used a legacy floor; it does not prevent finishing)`
     : undefined;
@@ -151,5 +155,5 @@ export function isInterviewFinishRequest(text) {
 export function renderInterviewClosure(closure, korean = false) {
   const status = korean ? "인터뷰 종료 — 사용자 요청으로 종료했습니다. 추가 답변은 필요하지 않습니다." : "Interview ended at your request. No further answers needed.";
   const assessment = closure.assessmentCurrent ? (korean ? "마지막 점수는 참고 정보이며 완료 조건이 아닙니다." : "The last score is informational, not a completion condition.") : (korean ? "최신 답변에 대한 평가가 없거나 재검토가 중단되었습니다. 저장된 답변을 그대로 계획에 전달합니다." : "The latest answer is unassessed or its review was interrupted. Saved answers are still included in the handoff.");
-  return [status, assessment, korean ? "미해결·위임 사항을 보존했습니다. /skill:solar-plan으로 이 대화의 의도와 답변을 검토하고 계획을 작성하세요. 구현은 시작하지 않았습니다." : "Open/deferred issues are preserved. Use /skill:solar-plan to review the intent and saved answers in this conversation and write a plan. Implementation has not started."].join("\n");
+  return [status, assessment, korean ? "미해결·위임 사항을 보존했습니다. /skill:lite-plan으로 이 대화의 의도와 답변을 검토하고 계획을 작성하세요. 구현은 시작하지 않았습니다." : "Open/deferred issues are preserved. Use /skill:lite-plan to review the intent and saved answers in this conversation and write a plan. Implementation has not started."].join("\n");
 }

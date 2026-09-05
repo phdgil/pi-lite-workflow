@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-const skills = ["solar-research", "solar-interview", "solar-plan", "solar-execute"];
+const skills = ["lite-research", "lite-interview", "lite-plan", "lite-execute"];
 
 test("release manifest loads four skills and exactly the shipped runtime", () => {
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.3.0");
   assert.equal(manifest.license, "MIT");
   assert.deepEqual(manifest.pi, { extensions: ["./runtime/extension.ts"], skills: ["./skills"] });
   for (const name of skills) {
