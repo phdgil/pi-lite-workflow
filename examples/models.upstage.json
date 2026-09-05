@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "upstage": {
+      "baseUrl": "https://api.upstage.ai/v1",
+      "api": "openai-completions",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": true,
+        "supportsStore": false,
+        "supportsUsageInStreaming": false,
+        "supportsStrictMode": false,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "solar-pro4",
+          "name": "Upstage Solar Pro 4",
+          "reasoning": true,
+          "input": ["text"],
+          "thinkingLevelMap": { "max": "max" }
+        }
+      ]
+    }
+  }
+}

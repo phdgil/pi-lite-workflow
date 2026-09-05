@@ -1,0 +1,53 @@
+{
+  "name": "pi-solar-lite",
+  "version": "0.1.0",
+  "description": "Research, clarify intent, plan executable steps, and verify bounded work in pi with Solar Pro4 Max.",
+  "type": "module",
+  "license": "MIT",
+  "author": "phdgil",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phdgil/pi-solar-lite.git"
+  },
+  "homepage": "https://github.com/phdgil/pi-solar-lite#readme",
+  "bugs": "https://github.com/phdgil/pi-solar-lite/issues",
+  "keywords": ["pi-package", "solar", "skills", "interview", "planning"],
+  "engines": { "node": ">=22.19.0" },
+  "files": [
+    "runtime/extension.ts",
+    "runtime/interview.mjs",
+    "runtime/interview-report.mjs",
+    "runtime/interview-display.mjs",
+    "runtime/retry-fetch.mjs",
+    "skills/solar-research/SKILL.md",
+    "skills/solar-interview/SKILL.md",
+    "skills/solar-plan/SKILL.md",
+    "skills/solar-execute/SKILL.md",
+    "examples/models.upstage.json",
+    "docs/INSTALL.md",
+    "docs/WORKFLOW.md",
+    "docs/REFERENCES.md",
+    "docs/VALIDATION.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md"
+  ],
+  "pi": {
+    "extensions": ["./runtime/extension.ts"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "@earendil-works/pi-tui": { "optional": true },
+    "typebox": { "optional": true }
+  },
+  "scripts": {
+    "test": "node --test runtime/*.test.mjs tests/*.test.mjs",
+    "test:pi": "node tests/pi-smoke.mjs"
+  }
+}
