@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const PROBE_TYPE = "lite-test-reload-probe";
-const START_TYPE = "lite-test-reload-start";
+const PROBE_TYPE = "solar-test-reload-probe";
+const START_TYPE = "solar-test-reload-start";
 
 function writeGraph(moduleDir, phase, extension) {
   const helperPath = path.join(moduleDir, `reload-helper.${extension}`);
@@ -12,13 +12,15 @@ function writeGraph(moduleDir, phase, extension) {
   if (extension === "mjs") {
     writeFileSync(helperPath, [
       `export const marker = ${JSON.stringify(phase)};`,
+      "export const interviewStateVersion = 2;",
+      "export const workflowStateVersion = 3;",
       "export function legacyHelper() { return `legacy-${marker.toLowerCase()}`; }",
       "",
     ].join("\n"));
     writeFileSync(middlePath, [
-      'import { legacyHelper, marker } from "./reload-helper.mjs";',
+      'import { interviewStateVersion, legacyHelper, marker, workflowStateVersion } from "./reload-helper.mjs";',
       "export function readProbe() {",
-      '  return { marker, legacyHelperType: typeof legacyHelper, legacyHelperValue: legacyHelper() };',
+      "  return { marker, interviewStateVersion, workflowStateVersion, legacyHelperType: typeof legacyHelper, legacyHelperValue: legacyHelper() };",
       "}",
       "",
     ].join("\n"));
@@ -27,15 +29,19 @@ function writeGraph(moduleDir, phase, extension) {
 
   writeFileSync(helperPath, [
     `export const marker = ${JSON.stringify(phase)};`,
+    "export const interviewStateVersion = 2;",
+    "export const workflowStateVersion = 3;",
     "export function newHelper() { return `new-${marker.toLowerCase()}`; }",
     "export function helperVersion() { return `version-${marker.toLowerCase()}`; }",
     "",
   ].join("\n"));
   writeFileSync(middlePath, [
-    'import { helperVersion, marker, newHelper } from "./reload-helper.ts";',
+    'import { helperVersion, interviewStateVersion, marker, newHelper, workflowStateVersion } from "./reload-helper.ts";',
     "export function readProbe() {",
     "  return {",
     "    marker,",
+    "    interviewStateVersion,",
+    "    workflowStateVersion,",
     "    newHelperType: typeof newHelper,",
     "    helperVersionType: typeof helperVersion,",
     "    newHelperValue: newHelper(),",
@@ -47,18 +53,18 @@ function writeGraph(moduleDir, phase, extension) {
 }
 
 function writeExtension(extensionDir, phase, extension) {
-  writeFileSync(path.join(extensionDir, "lite-test-reload.ts"), [
+  writeFileSync(path.join(extensionDir, "solar-test-reload.ts"), [
     `import { readProbe } from "../reload-fixture-modules/reload-middle.${extension}";`,
     `const phase = ${JSON.stringify(phase)};`,
     "export default function (pi) {",
-    '  pi.registerCommand("lite-test-reload", {',
+    '  pi.registerCommand("solar-test-reload", {',
     '    description: "Reload the synthetic runtime fixture",',
     "    handler: async (_args, ctx) => {",
     "      await ctx.reload();",
     "      return;",
     "    },",
     "  });",
-    '  pi.registerCommand("lite-test-reload-probe", {',
+    '  pi.registerCommand("solar-test-reload-probe", {',
     '    description: "Record the synthetic runtime fixture version",',
     "    handler: async () => {",
     `      pi.appendEntry(${JSON.stringify(PROBE_TYPE)}, { phase, ...readProbe() });`,
@@ -81,7 +87,7 @@ async function invokeCommand(rpc, command) {
 }
 
 async function assertProbe(rpc, phase, expected) {
-  await invokeCommand(rpc, "/lite-test-reload-probe");
+  await invokeCommand(rpc, "/solar-test-reload-probe");
   const probe = latestEntry(await rpc.entries(), PROBE_TYPE);
   assert.ok(probe, `Reload probe ${phase} did not append an entry`);
   assert.equal(probe.phase, phase);
@@ -93,7 +99,7 @@ function assertNoLoadErrors(rpc, eventStart, stderrStart) {
   const extensionErrors = rpc.events.slice(eventStart).filter(event => event.type === "extension_error");
   assert.deepEqual(extensionErrors, [], `Reload fixture emitted extension errors: ${JSON.stringify(extensionErrors)}`);
   const stderr = rpc.stderr.slice(stderrStart);
-  assert.doesNotMatch(stderr, /Failed to load extension|reload-(?:helper|middle)\.[mt]s|lite-test-reload\.ts/iu, `Reload fixture emitted loader diagnostics:\n${stderr}`);
+  assert.doesNotMatch(stderr, /Failed to load extension|reload-(?:helper|middle)\.[mt]s|solar-test-reload\.ts/iu, `Reload fixture emitted loader diagnostics:\n${stderr}`);
 }
 
 export function prepareReloadFixture(agentDir) {
@@ -108,15 +114,19 @@ export function prepareReloadFixture(agentDir) {
     const eventStart = rpc.events.length;
     const stderrStart = rpc.stderr.length;
     await assertProbe(rpc, "A", {
+      interviewStateVersion: 2,
+      workflowStateVersion: 3,
       legacyHelperType: "function",
       legacyHelperValue: "legacy-a",
     });
 
     writeGraph(moduleDir, "B", "ts");
     writeExtension(extensionDir, "B", "ts");
-    await invokeCommand(rpc, "/lite-test-reload");
+    await invokeCommand(rpc, "/solar-test-reload");
     assert.deepEqual(latestEntry(await rpc.entries(), START_TYPE), { phase: "B", reason: "reload" });
     await assertProbe(rpc, "B", {
+      interviewStateVersion: 2,
+      workflowStateVersion: 3,
       newHelperType: "function",
       helperVersionType: "function",
       newHelperValue: "new-b",
@@ -125,9 +135,11 @@ export function prepareReloadFixture(agentDir) {
 
     writeGraph(moduleDir, "C", "ts");
     writeExtension(extensionDir, "C", "ts");
-    await invokeCommand(rpc, "/lite-test-reload");
+    await invokeCommand(rpc, "/solar-test-reload");
     assert.deepEqual(latestEntry(await rpc.entries(), START_TYPE), { phase: "C", reason: "reload" });
     await assertProbe(rpc, "C", {
+      interviewStateVersion: 2,
+      workflowStateVersion: 3,
       newHelperType: "function",
       helperVersionType: "function",
       newHelperValue: "new-c",

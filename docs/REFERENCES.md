@@ -1,6 +1,6 @@
 # References, provenance, and license audit
 
-Checked 2026-09-05. This records the projects considered before building the skills and during the separate controller experiment. A documentation/source review is not a successful Solar/Windows integration test. Links use the reviewed versions or snapshots where available; version tags are not immutable guarantees.
+Checked 2026-09-06. This records the projects considered before building the skills and the public interfaces used by the Windows controller. A documentation, source, or exported-type review is not a successful Solar/Windows integration test. Links use the reviewed versions or snapshots where available; version tags are not immutable guarantees.
 
 ## Community components evaluated before implementation
 
@@ -27,15 +27,35 @@ Research-first is the workflow chosen for this package, not a claim that upstrea
 
 | Component | Usage | Audited license |
 | --- | --- | --- |
-| [@earendil-works/pi-coding-agent 0.85.0](https://github.com/earendil-works/pi/blob/v0.85.0/packages/coding-agent/package.json) | Host extension API, tool/session events, UI, package discovery. | [MIT; Mario Zechner](https://raw.githubusercontent.com/earendil-works/pi/v0.85.0/LICENSE) |
-| [@earendil-works/pi-tui 0.85.0](https://github.com/earendil-works/pi/blob/v0.85.0/packages/tui/package.json) | Text components, wrapping, and theme-aware display. | [MIT; Mario Zechner](https://raw.githubusercontent.com/earendil-works/pi/v0.85.0/LICENSE) |
+| [@earendil-works/pi-coding-agent 0.85.1](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/package.json) | Host extension API, tool/session events, UI, package discovery, and the public SDK used for role sessions. | [MIT; Mario Zechner](https://raw.githubusercontent.com/earendil-works/pi/v0.85.1/LICENSE) |
+| [@earendil-works/pi-tui 0.85.1](https://github.com/earendil-works/pi/blob/v0.85.1/packages/tui/package.json) | Text components, wrapping, and theme-aware display. | [MIT; Mario Zechner](https://raw.githubusercontent.com/earendil-works/pi/v0.85.1/LICENSE) |
 | [TypeBox 1.3.7](https://github.com/sinclairzx81/typebox/tree/1.3.7) | Tool parameter schemas. This is `typebox`, not the older `@sinclair/typebox` package name. | [MIT; Haydn Paterson](https://raw.githubusercontent.com/sinclairzx81/typebox/1.3.7/license) |
 
-These are declared as optional peers because pi supplies them to extensions; the package does not download or bundle a second host. Supported/tested pi remains 0.85.0 even though the peer range follows pi's documented `*` convention. Node built-ins provide the remaining mechanics; there are no added third-party runtime dependencies.
+These are declared as optional peers because Pi supplies them to extensions; the package does not download or bundle a second host. Pi 0.85.1 is the implementation target even though the peer range follows Pi's documented `*` convention. Node built-ins provide the remaining mechanics; there are no added third-party runtime dependencies.
+
+## Pi 0.85.1 SDK and exported type surface
+
+The role-session design is grounded in Pi 0.85.1's public source and the matching exported declarations supplied by the installed package, not an unsupported patch or an inference from private runtime behavior:
+
+| Official Pi 0.85.1 surface | Contract used |
+| --- | --- |
+| [`sdk.ts`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/sdk.ts) | `createAgentSession` options for an explicit model, thinking level, `tools:[]`, resource loader, settings manager, and session manager. |
+| [`resource-loader.ts`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/resource-loader.ts) | `DefaultResourceLoader` flags that disable extension, skill, prompt-template, and context-file discovery. |
+| [`session-manager.ts`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/session-manager.ts) | `SessionManager.inMemory(...)` for a fresh nonpersistent conversation. |
+| [`settings-manager.ts`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/settings-manager.ts) | `SettingsManager.inMemory(...)` and declared retry/compaction settings without modifying user settings. |
+| [`agent-session.ts`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/agent-session.ts) | Public session state/system-prompt access plus `prompt`, `abort`, and `dispose` lifecycle methods. |
+
+These declarations establish which API may be implemented against; they do not prove creation, cancellation, cleanup, Solar output quality, or Windows integration. Those behaviors require deterministic fake-session/lifecycle checks and separately authorized live evidence. The package must stop if the installed supported surface differs; it must not patch the installed SDK, invent settings keys, use raw Upstage HTTP as a role-session fallback, or change GJC.
+
+## Hosted research APIs
+
+- [Tavily search](https://docs.tavily.com/documentation/api-reference/endpoint/search) and [extract](https://docs.tavily.com/documentation/api-reference/endpoint/extract): native JSON requests with private bearer authentication, basic depth, bounded results, and partial-failure handling. No Tavily SDK code is bundled.
+- [Unstructured direct Partition requests](https://docs.unstructured.io/api-reference/legacy-api/partition/post-requests), [parameters](https://docs.unstructured.io/api-reference/legacy-api/partition/api-parameters), and [document elements](https://docs.unstructured.io/api-reference/legacy-api/partition/document-elements): native multipart uploads for public documents. The direct API is legacy but supported; this is not the newer Pipelines API. No Unstructured library code is bundled.
+- Hosted API access, uploaded data, retention, and usage charges are governed separately by the providers' terms; MIT grants no API credits or data-upload permission. See [Tavily privacy](https://www.tavily.com/privacy) and [Unstructured platform terms](https://unstructured.io/platform-terms-of-service). Documentation was checked on 2026-09-06; adapter bounds are not contractual service limits.
 
 ## MIT compatibility and limits of this audit
 
-The audited direct references declare MIT; no conflicting direct copyleft requirement was identified for the selected release contents. [LICENSE](../LICENSE) covers original pi-solar-lite work only. [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the full pi, TypeBox, Ouroboros, and GJC notices, including attribution for adapted design/instruction material.
+The audited direct references declare MIT; no conflicting direct copyleft requirement was identified for the selected release contents. [LICENSE](../LICENSE) covers original pi-solar-workflow work only. [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the full pi, TypeBox, Ouroboros, and GJC notices, including attribution for adapted design/instruction material.
 
 Metadata-only MIT declarations for OMX and pi-interview do not supply missing copyright/permission texts. They are references only here: before copying or vendoring their source, obtain the canonical applicable notices. The local goal experiment's missing tarball notice was supplied from its upstream repository; neither its source nor controller is shipped here.
 

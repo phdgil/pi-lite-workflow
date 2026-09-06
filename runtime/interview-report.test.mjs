@@ -1,6 +1,49 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { goalToken, interviewContentHash } from "./interview.ts";
 import { formatInterviewQuestion, prepareInterviewReport, renderCurrentInterview, renderPendingInterview } from "./interview-report.ts";
+
+const answers = [{ id: "answer-1", text: "An initial intention." }];
+
+function proposal(question = "Which outcome matters?") {
+  const dimension = { score: 0.5, evidence: ["answer-1"], gap: "Intended outcome is still unclear" };
+  return {
+    goal: dimension,
+    constraints: dimension,
+    success: dimension,
+    blockers: [],
+    intent: "Clarify the outcome.",
+    changeReason: "Scope is still unclear.",
+    question,
+    strategy: "question",
+    currentGapId: "outcome",
+    materialState: {
+      topics: [{ topicId: "initial-intent", kind: "decision", normalizedValue: "an initial intention", sourceContentHashes: [interviewContentHash(answers[0].text)] }],
+      gaps: [{ gapId: "outcome", status: "open", normalizedSummary: "intended outcome remains unclear" }],
+      claims: [],
+    },
+    readiness: {
+      status: "not_ready",
+      materialGaps: [{ id: "outcome", issue: "The intended outcome remains unclear.", evidenceIds: ["answer-1"], researchable: false }],
+      contradictions: [],
+    },
+  };
+}
+
+function readyProposal() {
+  const input = proposal("");
+  input.strategy = "ready";
+  delete input.currentGapId;
+  input.materialState.gaps[0].status = "resolved";
+  input.materialState.gaps[0].normalizedSummary = "the intended outcome is a concise offline report";
+  input.readiness = {
+    status: "ready",
+    goalSentence: "Write a concise offline report that answers the named question.",
+    materialGaps: [],
+    contradictions: [],
+  };
+  return input;
+}
 
 test("the observed two-question report keeps one question and defers the other", () => {
   const original = "Have you opened the syllabus HWPX, and what databases does it list week by week? Which unfamiliar DB category comes first?";
@@ -31,39 +74,54 @@ test("premature final-question framing is removed without altering the question"
     assert.equal(formatInterviewQuestion(prefix + "Which outcome matters?").question, "Which outcome matters?");
   }
   assert.equal(formatInterviewQuestion("What is the last question in the supplied survey?").question, "What is the last question in the supplied survey?");
-  const dimension = { score: 0.5, evidence: ["answer-1"], gap: "Intended outcome is still unclear" };
-  const state = prepareInterviewReport({ goal: dimension, constraints: dimension, success: dimension, blockers: [], intent: "Clarify the outcome.", changeReason: "Scope is still unclear.", question: "One more question: Which outcome matters?" }, undefined, [{ id: "answer-1", text: "An initial intention." }], "answer-1");
+  const state = prepareInterviewReport({ ...proposal(), question: "One more question: Which outcome matters?" }, undefined, answers, "answer-1");
   assert.equal(state.proposal.question, "Which outcome matters?");
 });
 
-test("pending or failed assessments hide the obsolete question and completion prompt", () => {
-  const state = { ambiguity: 4, round: 2, status: "awaiting_confirmation", proposal: { question: "OBSOLETE QUESTION", intent: "OBSOLETE INTENT" } };
+test("pending or failed assessments hide obsolete questions and distinguish early finish", () => {
+  const state = prepareInterviewReport(proposal(), undefined, answers, "answer-1");
+  state.proposal.question = "OBSOLETE QUESTION";
   const text = renderPendingInterview(state, false, "Correcting this report automatically.");
-  assert.match(text, /4.0%/);
+  assert.match(text, /50.0%/);
   assert.match(text, /previous.*not.*current/i);
   assert.match(text, /answer.*saved/i);
   assert.match(text, /^\[Processing your answer\] No additional reply needed/);
-  assert.doesNotMatch(text, /OBSOLETE|\/lite-interview confirm/);
+  assert.doesNotMatch(text, /OBSOLETE|\/solar-interview confirm/);
+  assert.match(text, /Normal closure requires current readiness.*explicit early finish/i);
   assert.match(renderPendingInterview(undefined, true, "재평가 중"), /새 질문.*대기/);
 });
 
-test("ready, correcting, and stopped panels distinguish whose turn it is", () => {
-  const state = { ambiguity: 36, delta: 4.5, round: 13, status: "interviewing", proposal: { question: "NEW QUESTION?", changeReason: "A new answer clarified intent." } };
-  assert.match(renderCurrentInterview(state), /^\[Your choice\]/);
-  assert.match(renderCurrentInterview(state, true), /^\[선택 차례\]/);
-  assert.match(renderPendingInterview(state, true, undefined, "retrying"), /^\[자동 수정 중\]/);
-  const stopped = renderPendingInterview(state, false, undefined, "stopped");
+test("question, goal-confirmation, research, and paused panels distinguish whose turn it is", () => {
+  const interviewing = prepareInterviewReport(proposal("NEW QUESTION?"), undefined, answers, "answer-1");
+  assert.match(renderCurrentInterview(interviewing), /^\[Your choice\]/);
+  assert.match(renderCurrentInterview(interviewing, true), /^\[선택 차례\]/);
+
+  const ready = prepareInterviewReport(readyProposal(), undefined, answers, "answer-1");
+  assert.match(renderCurrentInterview(ready), /^\[Confirmation choice\]/);
+  assert.match(renderCurrentInterview(ready), new RegExp(goalToken(ready)));
+
+  const researchInput = proposal("");
+  researchInput.strategy = "research";
+  const research = prepareInterviewReport(researchInput, undefined, answers, "answer-1");
+  assert.match(renderCurrentInterview(research), /^\[Research needed\]/);
+
+  const blockedInput = proposal("");
+  blockedInput.strategy = "blocked";
+  const paused = prepareInterviewReport(blockedInput, undefined, answers, "answer-1");
+  assert.match(renderCurrentInterview(paused), /^\[Paused\]/);
+  assert.match(renderCurrentInterview(paused), /answer\/clarify.*targeted public research.*finish early/is);
+
+  assert.match(renderPendingInterview(interviewing, true, undefined, "retrying"), /^\[자동 수정 중\]/);
+  const stopped = renderPendingInterview(interviewing, false, undefined, "stopped");
   assert.match(stopped, /^\[Processing stopped\]/);
   assert.doesNotMatch(stopped, /NEW QUESTION|Processing your answer|Your turn/);
 });
 
-test("formatting keeps evidence checks while accepting an optional question", () => {
-  const dimension = { score: 0.99, evidence: ["answer-1"], gap: "Only minor wording remains" };
-  const proposal = { goal: dimension, constraints: dimension, success: dimension, blockers: [], intent: "Clarified intent.", changeReason: "Explicit user confirmation of the requirements.", question: "" };
-  const answers = [{ id: "answer-1", text: "The complete requirements." }];
-  assert.equal(prepareInterviewReport(proposal, undefined, answers, "answer-1").status, "awaiting_choice");
-  assert.throws(() => prepareInterviewReport({ ...proposal, goal: { ...dimension, evidence: ["invented"] } }, undefined, answers, "answer-1"), /Available IDs/);
-  const input = { ...proposal, goal: { ...dimension, score: 0.5, gap: "Outcome unclear" }, question: "Which outcome matters? Which evidence would demonstrate it?" };
+test("formatting keeps V2 evidence checks while accepting an optional question", () => {
+  const optional = proposal("");
+  assert.equal(prepareInterviewReport(optional, undefined, answers, "answer-1").status, "awaiting_choice");
+  assert.throws(() => prepareInterviewReport({ ...optional, goal: { ...optional.goal, evidence: ["invented"] } }, undefined, answers, "answer-1"), /Available IDs/);
+  const input = proposal("Which outcome matters? Which evidence would demonstrate it?");
   const original = structuredClone(input);
   const state = prepareInterviewReport(input, undefined, answers, "answer-1");
   assert.equal(state.proposal.question, "Which outcome matters?");

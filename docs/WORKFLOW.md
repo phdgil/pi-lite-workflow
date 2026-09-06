@@ -1,101 +1,186 @@
 # Research -> interview -> plan -> execute
 
-pi-lite-workflow sharpens intention before implementation, then turns that intention into executable, verifiable steps. The four `lite-*` skills share one pi conversation and task folder while the host performs validated stage handoffs. They are designed for tool-capable models, including smaller and medium models, but model reasoning and tool behavior still determine semantic quality.
+pi-solar-workflow is a Windows-only Pi 0.85.1 controller for exactly four skills: `solar-research`, `solar-interview`, `solar-plan`, and `solar-execute`. Every main or delegated model role must resolve to Upstage `solar-pro4` with Max thinking or fail visibly. Select the main model and thinking level with Pi's normal `/model` and `/thinking` controls; the workflow does not rewrite provider/model configuration or fall back to another model. Normal flow moves forward, but evidence may justify a bounded return to an earlier stage without discarding the original request, answers, corrections, or research.
 
-## 1. Research: establish context before asking
+## Commands and authority
 
-```text
-/skill:lite-research Use work/my-task. Investigate <question> using <sources>.
-```
-
-Inspect relevant local files, supplied documents, and available source-reading tools. Save `research.md` with `Status: complete` and nonempty `Original intention`, `Evidence`, `Caveats and unknowns`, and `Useful interview questions` sections. `lite_research_ready` reads and structurally validates the existing in-workspace file, then starts the interview. Use `Status: blocked` and stop when essential evidence is unavailable.
-
-Research answers factual questions; it cannot decide the user's values. Missing web-search access is an evidence limitation, not permission to invent citations. The package installs no search service or API key. A later factual gap can trigger another bounded research pass without discarding intentions already stated by the user.
-
-The host carries the original user request and research snapshot as distinct inputs into every interview request and later workflow model call. Source snapshots are labeled untrusted data. A generic pi context hook supplies this context without rewriting arbitrary provider wire payloads. Research can prevent goal drift and repeated factual questions, but it is not a replacement goal, an instruction source, or permission to expand scope. `--research-only` host-enforces the stop even if a model attempts `lite_research_ready`.
-
-## 2. Interview: sharpen meaning and success
-
-Normally the host launches this stage after validating `research.md`. Direct starts are also available:
-
-```text
-/lite-interview Help clarify <vague intention>.
-/skill:lite-interview Help clarify <vague intention>.
-```
-
-The interviewer asks at most one consequential question per turn: what an ambiguous phrase means in a concrete situation, which assumption is supported, which tradeoff matters, or what observable result would meet the need. It should use research and earlier answers instead of requesting the same information again. The user, not the score, decides whether another round is useful.
-
-The `lite_interview_round` tool saves original answers, associated questions, and evidence-linked assessments. After every accepted report, the runtime displays:
-
-- A prominent numbered question in a round-specific color when another useful question is available.
-- Current ambiguity and signed change in percentage points as informational estimates.
-- What the answer clarified or reopened.
-- Whether it is awaiting a finish/continue choice, processing, correcting a malformed report, or stopped.
-
-Clarity scores are model judgments on 0..1. The host computes an ambiguity percentage from dimensions and weights frozen for that interview. New contradictions can increase ambiguity; the initial unassessed state is shown as awaiting assessment rather than assigned an invented score. These numbers are not calibrated uncertainty. A low number does not prove intent is captured, and no score determines whether the user may finish.
-
-Score clarity of the user's intention, not implementation completeness. Choices explicitly delegated to planning, execution, or student discovery belong in evidence-linked `deferred` items. Genuine contradictions and open outcomes remain unresolved. `/lite-interview review` rerates saved evidence without creating another answer, retains the previous assessment, and labels the change as a review rather than new-answer progress. Structural evidence validation cannot guarantee that the model's semantic classification is correct.
-
-After any round, the user may enter `/lite-interview finish` or `/lite-interview continue`. Finish works at **any ambiguity score**, including while an assessment or review is pending. It cancels the pending interview request, preserves saved answers, marks an older assessment stale when needed, and launches planning with unresolved and deferred items intact. It does not request a second confirmation.
-
-A clear direct natural-language instruction can also finish the interview. Recognized examples include `That's enough`, `I have provided sufficient details. Move on to planning.`, and `충분합니다`. The handler records the user's choice; it does not infer that the intention is sufficiently defined. General natural-language interpretation remains model-level, and hypothetical, quoted, or ambiguous mentions of stopping are not finish decisions. `/lite-interview finish plan-only` launches planning without automatic execution. `/lite-interview stop` saves and cancels. `/lite-interview resume` reopens saved state without inference, and `/lite-interview review` rerates existing evidence. The runtime does not overwrite a pre-existing `brief.md`.
-
-## 3. Plan: turn the finished interview into checkable steps
-
-`/lite-interview finish` already starts planning; do not invoke the planner a second time during the normal flow. Use `/skill:lite-plan` directly when requirements are already clear, when deliberately skipping the interview, or when revising an existing plan. Add `--plan-only` to prevent automatic execution.
-
-```text
-/skill:lite-plan Use work/my-task and the finished interview in this conversation. Carry unresolved and deferred items into a reviewed plan.
-```
-
-The planner reads research, any relevant legacy brief, the user-finished interview handoff, and the minimum project context needed. The latest saved answers override legacy interpretations. Unresolved issues and deferred choices remain explicit inputs instead of being treated as resolved. A still-active interview is not a planning handoff.
-
-| Review function | Purpose |
+| Command | Effect |
 | --- | --- |
-| Planner | Define at most five executable steps, affected outputs/files, dependencies, acceptance conditions, and available validation commands. |
-| Design/architect review | Check feasibility, interfaces, dependencies, constraints, and the simplest viable alternative. |
-| Critical review | Challenge missing acceptance checks, risks, unsupported assumptions, unnecessary work, and handoff mismatches. |
+| `/solar-workflow status` | Shows the current stage, reviewed/approved revision, detours, steps, and budgets. |
+| `/solar-workflow approve <revision>` | Approves exactly the displayed, fully reviewed plan revision and starts execution. |
+| `/solar-workflow revise <feedback>` | Invalidates current approval/acceptance authority and returns the staged plan to planning. |
+| `/solar-workflow accept <revision>` | Accepts current qualitative evidence for the exact revision after file freshness is rechecked. |
+| `/solar-workflow stop` | Saves state and removes continuation authority. |
+| `/solar-workflow resume` | Resumes only the stage/revision already authorized; it grants no approval. |
+| `/solar-workflow limits cycles=N detours=N turns=N` | Adjusts the existing cycle, detour, and main-session turn budgets. |
 
-These are sequential self-review perspectives of **one model**, not independent agents. The skill revises once and writes `plan.md`. To hand off, the file must have `Status: ready`, one to five bounded steps under `Steps and validation`, and nonempty `Goal and scope`, `Design review`, `Risk review and revisions`, `Acceptance criteria`, and `Remaining uncertainties` sections. Numbered lists, bold `Step N` blocks, `Step N` headings, and task-checkbox steps are accepted step formats; examples inside fenced code blocks do not count.
+Interview closure commands are deliberately distinct:
 
-The planner calls `lite_plan_ready` with the plan path, a concise evidence-based alignment statement, and `conflicts`. The host verifies both the plan file and this review report. `conflicts: []` allows automatic execution when the plan aligns with the finished interview and the original request already authorizes the reversible local scope; no additional approval is needed. A nonempty conflicts list blocks automatic execution. Deliberately deferred implementation details are not conflicts by themselves.
+| Command | Effect |
+| --- | --- |
+| `/solar-interview confirm <current-token>` | Normal closure: confirms the exact current ready goal. |
+| `/solar-interview finish` | Explicit early closure at any score; open and stale items remain labeled. |
+| `/solar-interview finish plan-only` | Early closure and a hard planning-only boundary. |
+| `/solar-interview continue` | Continues with another consequential question. |
+| `/solar-interview review` | Reassesses saved evidence without pretending a new answer was supplied. |
+| `/solar-interview pause`, `resume`, `stop`, `status` | Saves, resumes, stops, or displays interview state without implicit advancement. |
 
-The alignment statement and conflicts list are the model's self-review, not independent semantic proof. Host validation confirms required structure and report shape; it does not prove that the model interpreted the interview correctly, and it never expands authorization. This is not GJC's complete Ralplan runtime or a host-enforced consensus protocol.
+Quotations, assistant prose, a plain “yes,” or merely mentioning a command never grant authority. Interrupted work is not success. Exhausted budgets pause with retained evidence and actionable choices.
 
-Actual manual use has covered `/skill:lite-plan` both to skip directly to planning and to replan an existing task. The normal finish path starts planning once and does not require a second planner command.
-
-## 4. Execute: verify the outcome, not a claim
-
-Normally `lite_plan_ready` launches this stage without another confirmation when file validation succeeds, the model reports no interview/plan conflicts, and the original request already authorizes the local work. A direct start remains available:
+## 1. Research
 
 ```text
-/skill:lite-execute Implement and verify the reviewed local plan in work/my-task/plan.md within the original requested scope.
+/skill:solar-research Use <task-folder>. Investigate <question> using <allowed-sources>.
 ```
 
-The execution skill reads the source and tests, writes a bounded checklist, implements the next step, runs the smallest relevant check, and records the outcome in `progress.md`. It attempts one targeted correction after a failure; repeated failure becomes a documented blocker rather than an endless loop. Completion requires recorded acceptance evidence, not checked boxes or model confidence.
+Research keeps the original intention separate from claims. A submission identifies:
 
-A plan file alone is not authorization. The explicit `--plan-only` flag and research/plan ready-tool boundaries are host-enforced, including synthetic attempts to call the tool. Common restrictive phrases are recognized, but arbitrary natural-language restrictions, material-blocker classification, and scope interpretation remain model-level boundaries. Missing permissions, destructive actions, and external-system changes stop automatic continuation. Installing packages, publishing, committing, or changing external systems requires corresponding user authorization. These instructions are not an OS sandbox; use proper isolation for untrusted code.
+- evidence, inference, uncertainty, and user-decision claims;
+- sources and successful retrieval receipt IDs;
+- limitations and the remaining gap;
+- learned claim IDs; and
+- for a useful detour, a named next question with its gap and rationale.
 
-## Public names and compatibility
+The model does not write the authoritative research artifact. `solar_research_ready` submits a versioned contract and the artifact revision it expects. The controller validates size, claim/source/receipt lineage, workflow/gap/answer-head identity, and disk freshness before it renders and revision-safely replaces `.solar-workflow/<workflow-id>/research.md`. A stale revision, malformed contract, missing receipt, or unowned collision leaves existing bytes untouched and keeps the stage repairable.
 
-| Public v0.3.0 surface | Migration compatibility |
+On an initial pass, a valid ready result may enter interview. `--research-only` validates and persists the submission before ending at `research_complete`; a blocked result cannot masquerade as advancement. During a detour, the controller returns to the saved caller only for the same gap and answer head. Prior research and every saved answer/correction remain available. A useful return contains relevant new source content and a named improved question; when evidence is unavailable, the result says `blocked` with limitations rather than inventing an answer.
+
+Search snippets are discovery leads, not retrieved evidence. Tavily can retrieve public search/pages and Unstructured can extract public PDF/Office results. Each research pass permits three basic searches, three page reads, and two public-document reads; a document is bounded to 10 MiB and 120 seconds. These are application safeguards, not Tavily/Unstructured contractual quotas. A receipt proves retrieval, not semantic correctness. `--local-only` or `--no-web` excludes external research.
+
+## 2. Interview
+
+The interviewer asks at most one consequential question per turn and records an evidence-linked round after each answer. Ambiguity dimensions remain advisory. Scores cannot automatically finish the interview, require a minimum number of rounds, or make repeated wording useful.
+
+Corrections are first-class saved decisions and override older answers or research inference. The current material state tracks:
+
+- decisions, corrections, constraints, and success definitions by substantive topic and normalized value;
+- open, narrowed, and resolved gaps; and
+- relevant claims by gap and source-content hash.
+
+IDs, receipt IDs, URLs, titles, hashes, prose length, and score changes locate or summarize evidence; alone they are neither progress nor stagnation. Progress requires a relevant material change, such as a new/changed decision or correction, a narrowed/resolved gap, a different source-backed claim, a changed verified diagnostic, a passing gate, a resolved plan finding, or changed output bytes. The same short words can still be meaningful for a different substantive topic.
+
+After one no-progress answer on the current gap, the next strategy must be a genuine reframe or targeted research detour. If that distinct strategy also adds no material information, the interview pauses with the precise gap, attempt trace, saved answers, corrections, and choices. Unchanged resume cannot clear that state; new evidence or user direction can.
+
+### Normal readiness
+
+A normal ready assessment must be current for the answer and research heads, contain exactly one goal sentence, and have no material gaps, contradictions, or stale review. The controller enters `awaiting_goal_confirmation`, derives a goal revision, and displays its current 12-character lowercase hexadecimal token. Only this exact command normal-closes:
+
+```text
+/solar-interview confirm <current-token>
+```
+
+Any new answer or research result invalidates the token. Normal confirmation records the exact goal sentence that the user accepted.
+
+### Labeled early finish
+
+The user remains free to stop questioning at any score:
+
+```text
+/solar-interview finish
+```
+
+This creates `mode: early`. It preserves unresolved, contradictory, deferred, and stale-assessment items for planning and never presents normal readiness as achieved. Early closure grants a planning handoff, not execution authority; only a later exact reviewed-plan approval may authorize execution. Narrowly recognized direct English/Korean finish requests have the same semantics; quoted or hypothetical text does not. `/solar-interview finish plan-only` additionally prevents any execution path.
+
+When interview needs a factual answer it can request:
+
+```text
+solar_revisit({stage:'research',gap:'specific gap',evidence:'saved answers and observed reason'})
+```
+
+The returned evidence must retain the same gap/answer lineage. The controller, not the model, decides whether the transition is structurally current.
+
+## 3. Plan and review
+
+Planning reads the original request, complete research history, saved answers and corrections, non-goals, deferrals, unresolved issues, and task-relevant project evidence. It supports both:
+
+- software/application plans with architecture, feasibility, integration, commands, and outputs; and
+- research/analysis/document plans with methodology, source quality, evidence handling, document structure, and qualitative acceptance.
+
+A versioned execution contract contains the domain; requirements; final/intermediate/evidence artifact descriptors; 1–40 bounded dependency-ordered steps; inputs, actions, outputs, capabilities, and feasibility; command/rubric gates; and a whole-plan self-check. Every final artifact must be produced by a step, mapped to a gate, and marked for command or human acceptance. Structural validity does not prove semantic coverage or feasibility.
+
+Planning may revisit a missing fact or user decision:
+
+```text
+solar_revisit({stage:'research',gap:'factual or feasibility gap',evidence:'what was inspected'})
+solar_revisit({stage:'interview',gap:'user decision or conflict',evidence:'answer and research references'})
+```
+
+### Separate, tool-free contexts
+
+Planner, Approach Reviewer, and Critic each run in a fresh `SessionManager.inMemory(...)` Pi session with supported nonpersistent settings, explicit `solar-pro4`, `thinkingLevel: "max"`, and `tools:[]`. Extension, skill, prompt-template, and context-file discovery are disabled. Children cannot browse the workspace or inherit hidden main-session reasoning.
+
+The controller supplies a canonical, hashed provenance bundle containing mandatory requirements, research, answers, current plan/findings, and selected source excerpts. The serialized UTF-8 bundle is capped at 256 KiB and each optional source excerpt at 32 KiB. Mandatory contracts are never silently truncated; missing or oversized evidence creates a visible research/revision blocker.
+
+Each creation-plus-prompt attempt has one 180,000 ms deadline. The controller reserves budget before creation, rechecks workflow/input/plan identity after every await, ignores late output, and aborts/disposes obtained sessions. Defaults are:
+
+- 12 SDK **session attempts** total;
+- 3 repair attempts; and
+- 3 review revisions.
+
+A repair consumes one session attempt and one repair. These counters do not represent HTTP calls, provider retries, tokens, throughput, rate limits, or billing quotas.
+
+The Approach Reviewer and Critic see the full current plan bundle in distinct contexts. The former checks domain-specific approach and feasibility; the latter checks whole-plan scope, risk, verification, and acceptance. Their receipts bind role, context, input revision, plan revision, model, Max thinking, attempt, and output revision. Because all roles use Solar Pro4 Max and controller-selected evidence, the reviews are correlated signals, not independent proof.
+
+Every actionable finding is mapped to a changed plan location or marked blocked. A material finding requires a fresh Planner attempt, a full plan revision, resolution mapping, and fresh reviews by both reviewers. A stale, malformed, failed, blocked, or unresolved review cannot advance. Reviewers do not manufacture ceremonial findings when the plan already resolves a probe.
+
+`solar_plan_ready(...)` validates and stages only the fully reviewed current digest. For executable work, the user reviews it before `/solar-workflow approve <revision>`. For planning-only work, the same complete parse/review/revision cycle ends at `planning_complete`; no approval token, execute tool, or execution follow-up is emitted.
+
+## 4. Execute and verify
+
+Execution receives only an exact reviewed revision with current human approval. Before any product mutation, one shared authority predicate checks the workspace/workflow identity, active execute stage, disk plan digest, approval, artifact-table revision, stop signal, and operation mode.
+
+- **Step mode:** only the current dependency-ready step and its declared tools, paths, commands, and gates are authorized.
+- **Final mode:** no step remains; only the exact approved gates may rerun. Final mode does not re-enable arbitrary mutation tools.
+
+The same check protects model tool calls and direct host gates. Gate execution checks fresh state before every gate, immediately before every `pi.exec`, and after each result before commit. If an earlier gate or external action changes identity, stage, revision, approval, or descriptors, the remaining gates do not launch. Rubric capture is guarded too.
+
+A completed step reports its approach and evidence:
+
+```text
+solar_step_done({step:'S1',summary:'what changed and why',evidence:['<evidence-file>'],approach:{id:'A1',description:'...'}})
+```
+
+Approved commands run in Windows PowerShell with user permissions, not in a path-confined sandbox. They time out after 60 seconds, must be non-destructive, and must encode the displayed pass condition and exit nonzero on failure. The runtime checks exit status, evidence identity/freshness, and declared files; it cannot infer arbitrary semantic thresholds from prose.
+
+A failed step has at most three execution attempts. A targeted retry must use a genuinely changed approach. Repeating failed approach/evidence is no progress. When recovery is exhausted, the controller preserves best artifacts and diagnostics and pauses instead of completing.
+
+### Checkpoint and artifact identity
+
+The controller hashes the canonical artifact descriptor table. Changing an artifact path, kind, acceptance mode, or gate binding—even under the same ID—clears reusable results, approval, final checks, final review, and acceptance. Files, snapshots, attempts, and history remain as explicitly non-authoritative recovery evidence. An identical table may reuse only otherwise eligible step/gate/file-hash checkpoints, and final gates still rerun.
+
+### Current finals and human acceptance
+
+Final verification hashes every declared final, reruns every exact approved gate under final authority, then hashes finals again. Missing or changed bytes make the batch stale and return it to repair/replanning. A command-only plan auto-completes only if every final is command-accepted, every gate passes, no rubric exists, and the before/after manifests agree.
+
+Any rubric or human-accepted final creates a final-review digest bound to the plan revision, artifact-table revision, final checks, and final manifest. The user reviews the current named evidence and chooses:
+
+```text
+/solar-workflow accept <revision>
+/solar-workflow revise <feedback>
+```
+
+Acceptance first rehashes every final/evidence file. A change invalidates the token. Qualitative work is accepted by a human judgment with rationale, not a synthetic aggregate model score.
+
+## Artifacts and preserved state
+
+| Artifact/state | Authority |
 | --- | --- |
-| `lite-research`, `lite-interview`, `lite-plan`, `lite-execute` | `/skill:solar-*` runtime aliases remain available; duplicate old skill files are not shipped. |
-| `/lite-interview` | `/solar-interview` remains a runtime alias. |
-| `lite_research_ready`, `lite_interview_round`, `lite_plan_ready` | Old saved `solar-*` state identifiers remain internal for existing-session compatibility. |
+| Controller-owned `research.md` | Validated evidence/lineage for the current workflow revision. |
+| Saved answers, corrections, gaps, and research history | Persistent context across stages and detours. |
+| Reviewed `plan.md` plus execution contract | Candidate scope and gates; not approval by itself. |
+| Approval, dispatch checks, gate records, artifact-table revision, and final manifest | Authoritative only while all bound identities remain current. |
+| `progress.md`, old files, snapshots, attempts, and best results | Human recovery/audit evidence; never implicit authority. |
 
-## Handoff and resume
+For each completed step, `recordStep` stores verified contents up to 128 KiB per file and 1 MiB across active-workflow snapshot contents. Files through 16 MiB may be hash-only; larger outputs need a bounded verification report. Historical versions are deduplicated records rather than a promise that the entire session stays under 1 MiB.
 
-| Artifact | Owner/location | Meaning |
-| --- | --- | --- |
-| `research.md` | Research skill; current workspace | Original intention, evidence, caveats/unknowns, and useful interview questions; structurally validated before handoff. |
-| Original request and research snapshot | Runtime; current pi session | Distinct persistent inputs supplied to interview requests; source content is untrusted data. |
-| Interview answers/score history | Runtime; current pi session | Original answers and accepted evidence-linked advisory assessments. |
-| Finished interview handoff | Runtime; same conversation | Latest answers and assessment state, including stale status, unresolved issues, and deferred choices. |
-| `brief.md`, if present | Existing project artifact | Background only; not silently rewritten or assumed current. |
-| `plan.md` | Planning skill; current workspace | Structurally validated reviewed plan; not semantic proof or expanded authorization. |
-| `progress.md` | Execution skill; task folder | Authorized scope, verified work, next step, or blocker. |
+There is no automatic destructive rollback. Stopping or invalidating authority preserves useful bytes but does not certify them.
 
-Keep the same task folder and conversation. Restart pi, then use `/resume` to reopen it. Internal `solar-*` persistence IDs intentionally remain stable for old-session compatibility. In a new conversation, provide and verify an explicit summary of the finished interview plus the relevant research/plan; the package does not import another session's authority automatically. Saved progress is evidence to recheck, not a reason to trust stale completion claims.
+## Boundaries and deployment
 
-For a genuinely changed goal, begin a new task deliberately. The host handoffs do not implement automatic plan invalidation, regression snapshots, continuous experiment keep/revert, or durable multi-goal orchestration.
+Before exact plan approval, ordinary product writes and external mutations are default-denied. Allowed preapproval activity is limited to reads, controlled public research, and controller-owned workflow artifacts. Installation, dependency changes, commits, publishing, destructive commands, credentials, and external-system changes require separate explicit authority.
+
+The controller is not an OS sandbox. PowerShell gates run with the user's permissions. Solar role separation does not create independent model consensus. Hosted retrieval and schemas do not prove factual correctness. The implementation target is Windows; other operating systems are outside acceptance.
+
+Source changes and installation are separate. A deployment must be separately approved, copy only the reviewed Pi Solar package through the documented Windows mechanism, compare source and installed hashes for the explicit package file list and four skills, and leave the installed Pi SDK, GJC, provider/model configuration, and unrelated user work unchanged.
+
+Unsupported active persisted contract versions pause with an actionable error; the controller does not silently migrate them or dispatch work under an unknown shape.

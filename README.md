@@ -1,125 +1,127 @@
-# pi-lite-workflow
+# pi-solar-workflow
 
-**Research the context. Sharpen the intention. Plan executable steps. Verify the result.**
+**Research the context. Sharpen the intention. Approve a plan. Verify the current result.**
 
-Four lightweight skills and an interview/runtime extension for [pi](https://github.com/earendil-works/pi). The workflow is designed for tool-capable models, including smaller and medium models, but model quality and tool support vary; compatibility is not guaranteed for every model or provider.
+`pi-solar-workflow` is a Windows-only, four-skill workflow controller for [pi](https://github.com/earendil-works/pi) 0.85.1 and Upstage Solar Pro4 Max. Its public stages are **research -> interview -> plan -> execute**:
 
-**v0.3.0 is experimental.** It adopts provider-independent branding and the `lite-*` public names. Solar Pro4 Max is the only model combination live-tested so far. This is an independent community package, not an official pi, Upstage, GJC, or OMX release.
+- `solar-research`
+- `solar-interview`
+- `solar-plan`
+- `solar-execute`
 
-## Why this exists
+The main role and the Planner, Approach Reviewer, and Critic roles must resolve to registry-configured Upstage `solar-pro4` with Max thinking or stop truthfully. The three planning roles use fresh, separate Pi sessions, but they use the same model and supplied evidence; their reviews are correlated self-review signals, not independent consensus or proof.
 
-A useful interview should uncover what the user means, not ask a context-free checklist of implementation questions. Research first separates facts the agent can find from priorities only the user can decide. The interview then explores assumptions, ambiguous words, tradeoffs, and observable success until the user chooses to finish. Planning turns that user-ended interview, including unresolved issues and deferred choices, into small, checkable steps. Execution verifies the result instead of treating a confident answer as completion.
+This project is experimental and independent of pi, Upstage, GJC, and OMX. It does not install credentials, change model/provider configuration, patch the Pi SDK, or change GJC. Current controller behavior and model quality must be verified separately; documentation is not a test result.
 
-The model-facing instructions stay small. The host handles interview state, score arithmetic, recovery, display, and validated stage handoffs. This reduces workflow bookkeeping, but does **not** guarantee better reasoning, useful questions, or successful completion.
+## Install into Pi
 
-## Install into pi
-
-Requires Node.js **22.19+**, Git on PATH for Git installation, pi, and authorized access to a tool-capable model. No Codex account, GJC installation, Upstage account, or other community controller is required.
-
-If pi is not installed, the live-tested version is:
-
-```powershell
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.0
-```
-
-For a fresh installation of v0.3.0:
+The implementation target is Windows with Node.js 22.19+, Git when installing from Git, and `@earendil-works/pi-coding-agent` 0.85.1. Installation or deployment is a separate approval boundary. After reviewing the source, an authorized installation can use placeholders such as:
 
 ```powershell
-pi install git:github.com/phdgil/pi-lite-workflow@v0.3.0
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+pi install "<source-checkout>"
 pi
 ```
 
-This installs all four skills and the runtime extension. Copying only a `SKILL.md` is not sufficient. See the [installation guide](docs/INSTALL.md) for migration from the old repository, local installation, and the optional Upstage example. After installation or an update, restart pi; use `/resume` to reopen an existing conversation.
+The local checkout contains the Unreleased controller contract. Tagged `v0.3.0` is a historical baseline and does not provide these guarantees. The package installs the runtime and exactly four skills; copying one `SKILL.md` is insufficient.
 
-The package does not select a provider, change your account, or enforce a model/default. Use pi's normal `/login`, `/model`, and `/thinking` controls for the provider and model you are authorized to use. The CLI launch command remains `pi`.
-
-## The sequence
-
-**Research -> interview -> plan -> execute** is a same-conversation workflow with validated host handoffs.
-
-| Stage | Command inside pi | Purpose and handoff |
-| --- | --- | --- |
-| 1. Research | `/skill:lite-research` | Collect context and save a structurally complete `research.md`; `lite_research_ready` validates it and starts the interview. |
-| 2. Interview | launched by the host, `/lite-interview`, or `/skill:lite-interview` | Sharpen the original request using research as evidence, never as a replacement goal. The user may finish at any ambiguity score. |
-| 3. Plan | launched by interview finish | Use the original request, research, saved answers, unresolved issues, and deferrals to write and review `plan.md`. |
-| 4. Execute | launched after `lite_plan_ready` | Execute only the originally authorized, reversible local scope; verify each step and record results or blockers in `progress.md`. |
-
-Example: use the same task folder and pi conversation throughout.
-
-```text
-/skill:lite-research Use work/study-helper. I want a local study guide that helps students choose an analysis method. Research the supplied course materials and existing tools, clarify my intention, then plan, create, and verify the guide. Preserve source materials and unrelated files.
-```
-
-When `research.md` has `Status: complete` and nonempty `Original intention`, `Evidence`, `Caveats and unknowns`, and `Useful interview questions` sections, the host starts the interview. The original request and research snapshot remain distinct and available on every interview request. Research can prevent repeated factual questions without silently becoming a new goal or new authorization.
-
-After each round, the displayed ambiguity score and change are advisory model estimates. The user decides whether to continue or finish:
-
-```text
-/lite-interview finish
-```
-
-`finish`, or a clear direct natural-language equivalent, starts planning immediately with no second confirmation. Before handoff, the planner supplies `lite_plan_ready` with the plan path, a concise alignment statement, and a conflicts list. The host verifies both the file's required sections and one to five bounded steps plus that review report. An empty conflicts list permits automatic execution when the interview and plan align and the original request already authorizes that reversible local work; no additional approval is required. Nonempty conflicts, material blockers, missing permissions, destructive or external work, and research-only or planning-only constraints stop the sequence.
-
-Use `--research-only` on the initial research request to stop after research, or `--plan-only` to disable the plan-to-execute handoff. These explicit flags and the research/plan file validators are host-enforced, including when a model attempts a ready tool anyway. Common restrictive phrases are recognized, but general natural-language scope interpretation remains a model-level boundary. `/lite-interview finish plan-only` starts planning without automatic execution. `/lite-interview stop` saves and cancels without launching another stage.
-
-The planner's design/architect and critic passes are **one model's sequential self-review**, not independent-agent consensus. See the [workflow guide](docs/WORKFLOW.md) for artifacts, completion conditions, and limitations.
-
-### When to call the planner directly
-
-Normally, do not call it again after `/lite-interview finish`: planning has already started. Use `/skill:lite-plan` when requirements are already clear, when deliberately skipping the interview, or when revising an existing plan. Actual manual testing covered both skip/replan use and normal interview finish without a second planner call.
-
-For a planning-only review:
-
-```text
-/skill:lite-plan --plan-only Review and revise work/my-task/plan.md using the latest requirements; preserve the original scope.
-```
-
-Later, explicitly request `/skill:lite-execute` with the plan path when implementation is authorized.
-
-## Migration aliases
-
-`/lite-interview` is the primary runtime command. `/solar-interview` and `/skill:solar-research`, `/skill:solar-interview`, `/skill:solar-plan`, and `/skill:solar-execute` remain runtime aliases for migration. The package does not ship duplicate old `SKILL.md` files.
-
-Saved internal `solar-*` state identifiers intentionally remain unchanged so existing conversations can resume. They are persistence details, not the public package or skill names.
-
-## What the runtime adds
-
-- Every accepted assessment shows ambiguity and signed change as informational estimates, plus the choice to finish or continue. The score is not a calibrated probability or completion gate.
-- The original request, research snapshot, original answers, and associated questions survive host handoffs and session resume. Source snapshots are treated as untrusted evidence, not instructions.
-- A generic pi context hook supplies the original request and research snapshot to model calls without rewriting arbitrary provider wire payloads. Solar-specific `tool_choice` handling and HTTP 429 retries remain isolated provider features.
-- Bold questions use four rotating round colors, score details are muted, and a round without another useful question enters `awaiting_choice` instead of triggering report repair.
-- Malformed evidence and other invalid tool reports receive bounded automatic correction. `/lite-interview retry` reuses the saved answer rather than asking the user to repeat it.
-- `/lite-interview continue`, `resume`, and `review` respectively request an optional next question, reopen state without inference, and rerate existing evidence without creating another answer.
-- `/lite-interview finish` works at any score, including while assessment or review is pending. It preserves saved answers and carries unresolved and deferred items into planning without another interview assessment or confirmation.
-- A clear direct reply can finish the interview. This records the user's choice; it does not prove that the intention is sufficiently defined. Hypothetical or quoted mentions of stopping do not finish it.
-- Plan handoff checks the bounded plan structure and requires the model's concise alignment/conflicts self-review. Deferred implementation details are not conflicts merely because they remain for execution; a nonempty conflict list blocks automatic execution. An empty list is not independent proof of semantic alignment.
-- Delayed retries for real HTTP 429 responses are an optional, provider-specific feature currently limited to direct Upstage Solar Pro4 requests. They do not impose a local quota, bypass provider limits, or provide provider/account fallback.
-- Finishing never expands authority: automatic execution remains limited to reversible local work already requested by the user.
-
-## What is not included
-
-No separate controller package, new dependency, background goal engine, multi-agent consensus, provider/account fallback, web-search subscription, API credentials, or enforced model configuration. Research, planning, and execution remain single-model, prompt-guided skills using sources and tools already available in the pi installation. Missing tool or search access must be disclosed.
-
-A separate local prototype evaluated background goal continuation using `@piex-dev/goal`. It is **not bundled or activated here** and is distinct from the host handoffs. Downloaded upstream archives, private session logs, and experimental outputs are also excluded. No release claim promises benchmark superiority, long-running autonomy, or universal model compatibility.
-
-Extensions run with pi's permissions; these instructions are not an operating-system sandbox. Inspect code before installation and use a disposable workspace for untrusted tasks.
-
-## References and licenses
-
-The pre-build review covered **pi-code-planner, pi-autoresearch, @piex-dev/goal, and pi-interview**. The intention-clarification design also draws on **Ouroboros and GJC**, with **oh-my-codex** as orchestration background. The actual host dependencies are **pi-coding-agent, pi-tui, and TypeBox**, supplied by pi.
-
-See [References and the license audit](docs/REFERENCES.md) for every assessed project, source/version links, credited influences, and the distinction between inspiration, prototype reuse, and shipped dependencies.
-
-Original package code and documentation: **[MIT](LICENSE)**. Upstream copyrights and licenses remain theirs; [third-party notices](THIRD_PARTY_NOTICES.md) preserve the relevant texts. OMX and pi-interview declare MIT in metadata but lacked a canonical root license file at the audited snapshots; no source from either is bundled. Model/API access is not granted by this license.
-
-## Development and evidence
+Source edits do not update an already installed copy. After separately approving an installation/update, use the documented Windows mechanism, then compare every shipped source file and all four skill files with the installed copy. For example:
 
 ```powershell
-npm test
-npm run test:pi
-$env:PI_SMOKE_GENERIC = '1'
-npm run test:pi
-Remove-Item Env:PI_SMOKE_GENERIC
+Get-FileHash -Algorithm SHA256 "<source-checkout>\runtime\extension.ts"
+Get-FileHash -Algorithm SHA256 "<installed-package>\runtime\extension.ts"
 ```
 
-For v0.3.0, **69 unit/package tests passed**, followed by full isolated real-pi smoke passes for both the Upstage Solar Pro4 fixture with Max on the wire and the generic `mock-medium` fixture with reasoning disabled. Coverage includes reload/restart, legacy aliases, the whole workflow, plan alignment/conflict handling, and marked-step parsing. Both fixtures use only loopback mocks, not user credentials or live model intelligence. See [validation and known gaps](docs/VALIDATION.md) and the [changelog](CHANGELOG.md).
+Repeat for the explicit package manifest; matching names alone are not evidence of matching bytes. Never patch the installed Pi SDK or GJC. In an open Pi session use `/reload` after updating the package; after restarting Pi, reopen the conversation with `/resume`. See [installation](docs/INSTALL.md) for credential and package-registration guidance.
+
+Before starting a workflow, use Pi's normal `/model` and `/thinking` selectors to choose the configured Upstage `solar-pro4` model and Max thinking. The workflow reads the registry but does not write provider/model configuration; a missing or mismatched required model stops rather than falling back.
+
+## Workflow
+
+| Stage | Entry or handoff | Result |
+| --- | --- | --- |
+| Research | `/skill:solar-research` | The controller validates a typed evidence submission and owns the saved research artifact. An initial pass enters interview, `--research-only` ends at `research_complete`, and a useful detour returns to its saved caller. |
+| Interview | Host handoff or `/skill:solar-interview` | Saves answers, corrections, open gaps, and an advisory assessment. Normal readiness requires exact goal confirmation; explicit finish is an early, labeled exit. |
+| Plan | Interview closure or a planning detour | Produces a bounded plan for software/application or research/analysis/document work, then passes separate Approach and Critic review contexts. |
+| Execute | `/solar-workflow approve <revision>` | Runs only the exact reviewed revision, one dependency-ready step and guarded evidence gate at a time. |
+
+Start in one conversation and task folder:
+
+```text
+/skill:solar-research Use <task-folder>. Research the supplied context, clarify my intention, plan the work, and execute only after I approve the reviewed plan revision.
+```
+
+Corrections remain saved and override older interpretations. Research detours preserve the original request, answer history, caller, and gap. A detour may return only with relevant learned evidence and a named improved question, or with a truthful blocked result and limitations.
+
+### Interview closure and stagnation
+
+When the current answer/research heads support a one-sentence goal with no material gap, contradiction, or stale review, Pi shows that exact goal and a current 12-character lowercase hexadecimal token. Normal closure is:
+
+```text
+/solar-interview confirm <current-token>
+```
+
+A new answer or research result invalidates the token. A generic “yes,” quoted command, topical mention of planning, or assistant prose cannot close the interview.
+
+The user may deliberately bypass normal readiness at any score:
+
+```text
+/solar-interview finish
+/solar-interview finish plan-only
+```
+
+That path is recorded as **early** and carries unresolved, contradictory, deferred, and stale-assessment items forward instead of presenting them as resolved. Early closure itself grants only a planning handoff, never execution authority; only a later exact reviewed-plan approval can authorize execution. `finish plan-only` prevents that later execution path as well.
+
+Progress is based on material information, not a new ID, receipt, URL, hash, score, or repeated wording. A changed decision or correction, narrowed/resolved gap, relevant claim backed by different source content, changed diagnostic, passing gate, resolved plan finding, or changed output can count. After one same-gap no-information result the workflow must reframe or take a targeted research detour. If that distinct strategy also adds no material information, it pauses with saved work and concrete choices; it does not claim completion.
+
+### Context-separated plan review
+
+Planner, Approach Reviewer, and Critic attempts receive a controller-selected provenance bundle and `tools:[]`; extension, skill, prompt-template, and context-file discovery are disabled. Each attempt uses a new in-memory Pi session, explicit `solar-pro4`, and `thinkingLevel: "max"`. The Approach Reviewer checks architecture/feasibility for software work or methodology/evidence/document structure for research work. The Critic checks whole-plan scope, risk, verification, and acceptance.
+
+One attempt has a 180-second deadline covering session creation and prompting. Defaults are at most **12 SDK session attempts**, **3 repair attempts**, and **3 review revisions**. Repairs consume both an attempt and a repair. These are local controller/session-attempt budgets—not HTTP-request, retry, token, throughput, or provider quotas. Timed-out, cancelled, late, stale, or invalid attempts cannot write artifacts or passing receipts.
+
+Material findings require a full Planner revision, a location-bound resolution record, and fresh reviews by both reviewers. Unresolved, blocked, malformed, or stale reviews cannot advance. A planning-only request still completes the entire parse/review/revision cycle, then stops at `planning_complete` with no approval token, execution tool, or execution follow-up.
+
+### Exact approval and guarded verification
+
+A fully reviewed executable plan is staged for human inspection; it is not authority to mutate product output. Review its requirements, artifact table, steps, capabilities, PowerShell commands, rubrics, and findings, then use one of:
+
+```text
+/solar-workflow approve <revision>
+/solar-workflow revise <feedback>
+/solar-workflow stop
+```
+
+Approval binds the exact reviewed plan digest and artifact-table revision. A plan or artifact descriptor change clears checkpoint reuse, approval, final checks, review, and acceptance authority while retaining files and history as non-authoritative recovery evidence.
+
+Before approval, ordinary product mutation is default-denied. Only reads, controlled research, and controller-owned workflow artifacts are allowed. During execution the same fresh authority check guards model tools and direct host gate dispatch. It runs before each gate, immediately before each `pi.exec`, and before committing each result. A stop, revision, workflow change, wrong step, or stale approval aborts the remaining batch.
+
+Approved command gates use PowerShell, run with the user's permissions rather than a sandbox, and must encode their pass threshold and exit nonzero on failure. A step report identifies its approach and evidence. Repeating a failed approach/evidence does not count as repair; exhausted recovery preserves the best artifacts and diagnostics and pauses.
+
+Final verification hashes every declared final before gates, reruns all approved gates, and hashes finals again. Changed or missing bytes make the batch stale. Command-only finals may complete automatically only when every current gate and manifest passes. Any rubric or human-accepted final waits for qualitative review of the named evidence and:
+
+```text
+/solar-workflow accept <revision>
+```
+
+Acceptance is bound to the current plan, artifact table, checks, and file hashes. A changed file invalidates it. A human `revise` verdict returns to planning and requires fresh review and approval; there is no aggregate model score standing in for qualitative acceptance.
+
+## Controller-owned research
+
+`solar_research_ready` submits evidence, inference, uncertainty, and user-decision claims plus source/receipt lineage, limitations, the remaining gap, and an optional next question. The controller validates the expected artifact revision and detour lineage, renders `.solar-workflow/<workflow-id>/research.md`, and performs a revision-safe replacement. Stale submissions, malformed lineage, or an unowned collision do not overwrite bytes or advance the stage.
+
+Tavily may retrieve public search/page evidence, and Unstructured may extract public PDF/Office results. Search snippets alone cannot satisfy evidence handoff. Use private environment variables for service keys and `--local-only` or `--no-web` to exclude external research. Each pass allows three basic searches, three page reads, and two public-document reads; a document is bounded to 10 MiB and 120 seconds. These are application safeguards, not service quotas. Receipts prove retrieval, not factual correctness; partial extraction and limitations must remain visible.
+
+## Status and boundaries
+
+```text
+/solar-workflow status
+/solar-workflow resume
+/solar-workflow limits cycles=3 detours=8 turns=120
+```
+
+`resume` continues only an already authorized stage and never approves a revision. Existing cycle/detour/turn limits and the separate SDK role-attempt/review budgets stop no-progress loops without deleting saved answers, corrections, research, or best work.
+
+This workflow is not an OS sandbox. Package installation, dependency changes, publishing, commits, destructive commands, credentials, and external-system mutations require separate explicit authority. See [workflow details](docs/WORKFLOW.md), [validation and the frozen external protocol](docs/VALIDATION.md), and [references and provenance](docs/REFERENCES.md).
+
+Original package code and documentation are [MIT licensed](LICENSE). Model and hosted-service access are not granted by that license.

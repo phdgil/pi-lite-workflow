@@ -1,15 +1,35 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-const skills = ["lite-research", "lite-interview", "lite-plan", "lite-execute"];
+const skills = ["solar-research", "solar-interview", "solar-plan", "solar-execute"];
+
+test("only the four reviewed skills are discoverable", () => {
+  const loaded = readdirSync(path.join(root, "skills"))
+    .filter(name => existsSync(path.join(root, "skills", name, "SKILL.md")));
+  assert.deepEqual(loaded.sort(), [...skills].sort());
+});
+
+test("relative runtime imports are explicitly shipped", () => {
+  const shipped = new Set([...manifest.files, "package.json"]);
+  for (const filename of manifest.files.filter(name => name.startsWith("runtime/") && name.endsWith(".ts"))) {
+    assert.ok(existsSync(path.join(root, filename)), `${filename} is missing`);
+    const source = readFileSync(path.join(root, filename), "utf8");
+    for (const match of source.matchAll(/\b(?:from\s*|import\s*\()(["'])(\.[^"']+)\1/g)) {
+      const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(filename), match[2]));
+      assert.ok(shipped.has(dependency), `${filename} imports unshipped ${dependency}`);
+    }
+  }
+});
 
 test("release manifest loads four skills and exactly the shipped runtime", () => {
   assert.equal(manifest.version, "0.3.0");
+  assert.equal(manifest.name, "pi-solar-workflow");
+  assert.ok(!manifest.files.some(entry => entry.includes("skills/lite-")));
   assert.equal(manifest.license, "MIT");
   assert.deepEqual(manifest.pi, { extensions: ["./runtime/extension.ts"], skills: ["./skills"] });
   for (const name of skills) {
